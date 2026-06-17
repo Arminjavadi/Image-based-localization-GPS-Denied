@@ -1,0 +1,79 @@
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta}
+\usepackage{tcolorbox}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\definecolor{avlblue}{RGB}{30, 90, 160}
+\definecolor{avlteal}{RGB}{0, 130, 140}
+\definecolor{avlorange}{RGB}{230, 120, 30}
+\definecolor{avlgray}{RGB}{245, 247, 250}
+\definecolor{avlcodebg}{RGB}{248, 249, 252}
+\definecolor{avlborder}{RGB}{210, 218, 230}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=avlblue,
+  urlcolor=avlteal,
+  citecolor=avlorange
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{avlblue}{AVL Code Guide}}
+\fancyhead[R]{\small\textcolor{gray}{\leftmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\Large\bfseries\color{avlblue}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{avlteal}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{black}}{\thesubsubsection}{0.5em}{}
+
+\lstdefinestyle{avlcode}{
+  backgroundcolor=\color{avlcodebg},
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=false,
+  frame=single,
+  rulecolor=\color{avlborder},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{avlblue}\bfseries,
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{avlteal},
+  showstringspaces=false,
+  tabsize=2,
+  xleftmargin=1.5em,
+  framexleftmargin=1.5em
+}
+\lstset{style=avlcode}
+
+\newtcolorbox{infobox}[1][]{
+  colback=avlgray,
+  colframe=avlblue,
+  fonttitle=\bfseries,
+  title=#1,
+  arc=2mm,
+  boxrule=0.6pt,
+  left=4mm, right=4mm, top=2mm, bottom=2mm
+}
+
+\newtcolorbox{warnbox}[1][]{
+  colback=orange!5,
+  colframe=avlorange,
+  fonttitle=\bfseries,
+  title=#1,
+  arc=2mm,
+  boxrule=0.6pt,
+  left=4mm, right=4mm, top=2mm, bottom=2mm
+}
+
+\newcommand{\filepath}[1]{\texttt{\textcolor{avlteal}{#1}}}

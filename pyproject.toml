@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avl-gps-denied"
+version = "0.1.0"
+description = "Absolute Visual Localization for GPS-denied UAV navigation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.1.0",
+  "torchvision>=0.16.0",
+  "faiss-cpu>=1.8.0",
+  "numpy>=1.24.0",
+  "pandas>=2.0.0",
+  "Pillow>=10.0.0",
+  "tqdm>=4.66.0",
+  "gdown>=5.0.0",
+  "opencv-python-headless>=4.8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["avl*"]

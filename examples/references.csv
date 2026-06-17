@@ -1,0 +1,6 @@
+image_path,latitude,longitude,altitude_m,heading_deg,image_id
+examples/refs/ref_00.jpg,48.858370,2.294481,50.0,180.0,ref_00
+examples/refs/ref_01.jpg,48.858420,2.294520,52.0,175.0,ref_01
+examples/refs/ref_02.jpg,48.858460,2.294560,48.0,170.0,ref_02
+examples/refs/ref_03.jpg,48.858500,2.294600,55.0,165.0,ref_03
+examples/refs/ref_04.jpg,48.858540,2.294640,51.0,160.0,ref_04
