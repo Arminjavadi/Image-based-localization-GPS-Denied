@@ -8,7 +8,7 @@ Absolute Visual Localization (AVL) for UAVs using geo-tagged reference imagery, 
 Geo-tagged reference images
         │
         ▼
-MixVPR / CosPlace encoder  ──►  L2-normalized descriptors
+ DenseUAV ViT / MixVPR / CosPlace encoder  ──►  L2-normalized descriptors
         │
         ▼
 FAISS index (HNSW or IVF-PQ hashing)
@@ -19,13 +19,18 @@ Query UAV image  ──►  top-K retrieval  ──►  weighted geo fusion  ─
 
 ## Features
 
-- **MixVPR (default)** — SOTA holistic VPR aggregator (WACV 2023), 4096-dim descriptors
+- **DenseUAV ViT (default)** — 512-dim cross-view descriptor trained for UAV-to-satellite retrieval
+- **MixVPR** — strong general-purpose VPR baseline, 4096-dim descriptors
 - **CosPlace** — strong alternative via PyTorch Hub (`ResNet101`, 2048-dim)
 - **FAISS hashing**
-  - `hnsw` — best recall/latency for medium databases (default)
+  - `flat` — exact search and the default for DenseUAV-sized galleries
+  - `hnsw` — strong recall/latency for much larger databases
   - `ivfpq` — product-quantized compressed index for large-scale maps
-  - `flat` — exact baseline
-- **Geo fusion** — sphere-aware weighted average of top-K match coordinates
+- **Geo fusion** — sphere-aware weighted average of the five strongest unique locations
+
+The DenseUAV ViT checkpoint is downloaded from
+[`Bancie/UAV-Self-Positioning-23M-ZCN`](https://huggingface.co/Bancie/UAV-Self-Positioning-23M-ZCN)
+on first use and then loaded from the local Hugging Face cache.
 
 ## Install
 
@@ -63,6 +68,169 @@ python scripts/build_index.py \
 python scripts/localize.py \
   --index artifacts/demo_index \
   --query examples/queries/query.jpg
+```
+
+## Benchmark KPIs
+
+Use `scripts/benchmark_kpis.py` to compare neural encoders and FAISS search algorithms.
+
+```bash
+python scripts/benchmark_kpis.py \
+  --metadata examples/references.csv \
+  --base-dir . \
+  --query examples/queries/query.jpg \
+  --model-config mixvpr:4096 \
+  --model-config mixvpr:512 \
+  --index-types hnsw flat ivfpq \
+  --top-k 5 \
+  --repeats 5 \
+  --output-json artifacts/kpis.json \
+  --output-csv artifacts/kpis.csv
+```
+
+Main KPIs:
+
+| KPI | Meaning |
+|-----|---------|
+| `reference_encode_s` | Offline time to compute NN descriptors for all reference images |
+| `reference_encode_ms_per_image` | Offline descriptor throughput per reference image |
+| `faiss_build_s` | Offline time to build the FAISS index from descriptors |
+| `query_encode_ms_*` | Online time to compute the query image descriptor |
+| `search_ms_*` | Online FAISS nearest-neighbor search time |
+| `encode_plus_search_ms_mean` | Mean online descriptor + search latency |
+| `faiss_index_size_mb` | Serialized FAISS index size |
+| `recall_at_1`, `recall_at_5`, `recall_at_10` | Retrieval quality when query ground-truth IDs are provided |
+| `top1_error_m`, `fused_error_m` | Optional localization error when query ground truth lat/lon are provided |
+
+For quality KPIs, pass a query CSV:
+
+```csv
+image_path,latitude,longitude,expected_image_id
+examples/queries/query.jpg,48.85854,2.29464,ref_04
+```
+
+```bash
+python scripts/benchmark_kpis.py \
+  --metadata examples/references.csv \
+  --base-dir . \
+  --query-metadata examples/query_ground_truth.csv \
+  --query-base-dir . \
+  --model-config mixvpr:4096 \
+  --index-types hnsw flat \
+  --recall-k 1 5 10
+```
+
+## DenseUAV Testing Dataset
+
+DenseUAV is a low-altitude UAV self-positioning dataset with UAV-view and satellite-view imagery. Its metadata
+includes GPS text files in the form `path latitude longitude height`, which can be converted to this project's CSV
+format.
+
+Download and extract DenseUAV from Hugging Face:
+
+```bash
+python scripts/download_denseuav.py \
+  --output-dir data/DenseUAV \
+  --download-dir data/downloads
+```
+
+Convert DenseUAV metadata to AVL CSV files:
+
+```bash
+python scripts/prepare_denseuav.py \
+  --dense-root data/DenseUAV \
+  --output-dir data/denseuav_avl \
+  --reference-split gallery \
+  --reference-view satellite \
+  --query-view drone
+```
+
+For a fast smoke test, prepare a smaller subset:
+
+```bash
+python scripts/prepare_denseuav.py \
+  --dense-root data/DenseUAV \
+  --output-dir data/denseuav_avl_smoke \
+  --reference-split gallery \
+  --reference-view satellite \
+  --query-view drone \
+  --limit-references 200 \
+  --limit-queries 20
+```
+
+Run KPIs on DenseUAV:
+
+```bash
+python scripts/benchmark_kpis.py \
+  --metadata data/denseuav_avl/references_gallery_satellite.csv \
+  --base-dir / \
+  --query-metadata data/denseuav_avl/queries_test_drone.csv \
+  --query-base-dir / \
+  --model-config denseuav-vit:512 \
+  --index-types hnsw flat \
+  --top-k 5 \
+  --query-rotations 4 \
+  --repeats 3 \
+  --output-json artifacts/denseuav_kpis.json \
+  --output-csv artifacts/denseuav_kpis.csv
+```
+
+`references_gallery_satellite.csv` is the searchable database. Do not use
+`queries_test_drone.csv` as `--metadata`; that file contains evaluation queries,
+not satellite references. Four-orientation query search is enabled by default
+for aerial imagery to handle unknown UAV heading.
+
+## Localization and KPI Console
+
+The project includes a lightweight native Ubuntu GUI with two separate workflows. The GUI itself does not import
+Torch, FAISS, or the neural models; it starts the heavy pipeline commands as separate processes so the interface
+stays responsive.
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+python scripts/run_desktop_app.py
+```
+
+The console provides:
+
+| Area | Purpose |
+|------|---------|
+| Test & Visualize | Build the reference index once, then keep the model and FAISS index loaded in a persistent online engine for subsequent query images |
+| Batch KPI | Select a multiple-query CSV instead of a single image and report feature speed, search speed, total online latency, and Recall@1/5/10 |
+| Satellite reference CSV | Choose the geo-tagged satellite gallery CSV, never the query CSV |
+| Reusable offline index | Stores `index.faiss`, metadata, and offline timing so later query-image tests do not recompute reference features |
+| Localization result | Preview the selected query, fused estimated latitude/longitude, and ranked Top-K reference images |
+| Load KPI JSON | Display a previously generated `benchmark_kpis.py` JSON report without running the model |
+
+The interactive workflow is:
+
+1. Select the reference CSV and pipeline configuration.
+2. Click **Build offline index** once.
+3. The console starts and warms the persistent online engine.
+4. Select a query image and click **Run online query**.
+5. Select another query image and click **Run online query** again. The loaded model and index are reused.
+
+The first engine startup includes Python/Torch imports, model loading, index loading, and one warm-up pass.
+It happens asynchronously after opening an existing index or after building a new one. Once the status reads
+**ENGINE READY**, each interactive click performs exactly one feature extraction and one FAISS search. The
+**Online total** card shows visible GUI latency, while its detail separates worker end-to-end time from the
+feature-plus-search pipeline time. The **Benchmark repeats** setting applies only to Batch KPI mode.
+
+The batch CSV must contain:
+
+```csv
+image_path,latitude,longitude,expected_image_id
+path/to/query_001.jpg,30.1,120.2,location_001
+```
+
+`latitude` and `longitude` are optional for recall, but `expected_image_id` is required for Recall@1/5/10.
+
+Build a Linux executable:
+
+```bash
+bash scripts/build_desktop_app.sh
+./dist/AVL-Mission-Console/AVL-Mission-Console
 ```
 
 ## Production usage

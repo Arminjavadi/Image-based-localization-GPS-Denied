@@ -1,10 +1,181 @@
+# -----------------------------------------------------------------------------
+# Operating-system and editor files
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
+.history/
+
+# -----------------------------------------------------------------------------
+# Python environments, caches, tests, and packaging
+# -----------------------------------------------------------------------------
 .venv/
+venv/
+env/
+ENV/
+.python-version
 __pycache__/
 *.py[cod]
+*$py.class
+*.egg
 *.egg-info/
+.eggs/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.pyright/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# -----------------------------------------------------------------------------
+# Generated builds and packaged applications
+# -----------------------------------------------------------------------------
+build/
+build-*/
+dist/
+release/
+*.spec
+*.AppImage
+*.deb
+*.rpm
+
+# Native executables, libraries, and object files
+*.exe
+*.dll
+*.so
+*.so.*
+*.dylib
+*.bin
+*.out
+*.o
+*.obj
+*.a
+*.lib
+
+# -----------------------------------------------------------------------------
+# Generated documents and compressed archives
+# -----------------------------------------------------------------------------
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+*.zip
+*.tar
+*.tar.*
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.7z
+*.rar
+
+# -----------------------------------------------------------------------------
+# Model weights, vector indexes, and serialized binary data
+# -----------------------------------------------------------------------------
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.tflite
+*.h5
+*.hdf5
+*.safetensors
+*.pb
+*.pkl
+*.pickle
+*.joblib
+*.npy
+*.npz
+*.faiss
+*.index
+*.ann
+
+# Datasets, databases, generated outputs, and downloaded assets
 artifacts/
+data/
+datasets/
+db/
+database/
+databases/
+downloads/
+outputs/
+results/
+runs/
+checkpoints/
+weights/
+logs/
+tmp/
+temp/
 examples/refs/
 examples/queries/
-*.faiss
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.duckdb
+*.mdb
+*.accdb
+*.sql
+*.sql.*
+*.dump
+*.rdb
+*.bson
+*.parquet
+*.feather
+*.arrow
+
+# Images, video, and other binary media should live outside Git.
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.webp
+*.tif
+*.tiff
+*.jp2
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# -----------------------------------------------------------------------------
+# Logs, temporary files, and local secrets
+# -----------------------------------------------------------------------------
+*.log
+*.tmp
+*.temp
+*.bak
+*.cache
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+credentials.json
+secrets.json
+.netrc
+id_rsa*
+id_ed25519*
+
+# Notebook-generated state
+.ipynb_checkpoints/

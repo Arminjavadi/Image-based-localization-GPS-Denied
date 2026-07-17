@@ -84,6 +84,33 @@ class HashIndex:
         valid = indices[0] >= 0
         return SearchResult(indices=indices[0][valid], scores=scores[0][valid])
 
+    def search_orientations(self, queries: np.ndarray, top_k: int) -> SearchResult:
+        queries = np.asarray(queries)
+        if queries.ndim == 1:
+            queries = queries.reshape(1, -1)
+
+        best_by_location: dict[str, tuple[int, float]] = {}
+        candidate_k = min(max(top_k * 8, top_k), self.size)
+        for query in queries:
+            result = self.search(query, candidate_k)
+            for idx, score in zip(result.indices, result.scores):
+                index = int(idx)
+                record = self.records[index]
+                location_id = record.image_id or f"index:{index}"
+                previous = best_by_location.get(location_id)
+                if previous is None or float(score) > previous[1]:
+                    best_by_location[location_id] = (index, float(score))
+
+        ranked = sorted(
+            best_by_location.values(),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:top_k]
+        return SearchResult(
+            indices=np.asarray([index for index, _ in ranked], dtype=np.int64),
+            scores=np.asarray([score for _, score in ranked], dtype=np.float32),
+        )
+
     def save(self, directory: Path) -> None:
         if self.index is None:
             raise RuntimeError("Index is not built")
@@ -96,6 +123,7 @@ class HashIndex:
                 "model": self.config.model,
                 "descriptor_dim": self.config.descriptor_dim,
                 "cosplace_backbone": self.config.cosplace_backbone,
+                "query_rotations": self.config.query_rotations,
                 "index_type": self.config.index_type,
                 "hnsw_m": self.config.hnsw_m,
                 "hnsw_ef_construction": self.config.hnsw_ef_construction,
@@ -120,6 +148,7 @@ class HashIndex:
                 model=saved_config["model"],
                 descriptor_dim=saved_config["descriptor_dim"],
                 cosplace_backbone=saved_config.get("cosplace_backbone", "ResNet101"),
+                query_rotations=saved_config.get("query_rotations", 4),
                 index_type=saved_config["index_type"],
                 hnsw_m=saved_config.get("hnsw_m", 32),
                 hnsw_ef_construction=saved_config.get("hnsw_ef_construction", 200),

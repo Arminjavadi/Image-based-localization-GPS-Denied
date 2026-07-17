@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from avl.config import AVLConfig
 from avl.models.cosplace import COSPLACE_TRANSFORM, load_cosplace
+from avl.models.denseuav_vit import DENSEUAV_TRANSFORM, load_denseuav_vit
 from avl.models.mixvpr import MIXVPR_TRANSFORM, load_mixvpr
 
 
@@ -29,6 +30,24 @@ class _ImageDataset(Dataset):
         return self.transform(image), index
 
 
+class _QueryRotationDataset(Dataset):
+    def __init__(self, image_path: str | Path, transform, rotations: int) -> None:
+        with Image.open(image_path) as img:
+            self.image = img.convert("RGB")
+        self.transform = transform
+        self.rotations = rotations
+
+    def __len__(self) -> int:
+        return self.rotations
+
+    def __getitem__(self, index: int):
+        if self.rotations == 1:
+            image = self.image
+        else:
+            image = self.image.rotate(index * 90, expand=False)
+        return self.transform(image), index
+
+
 class VPREncoder:
     """State-of-the-art visual descriptor encoder (MixVPR or CosPlace)."""
 
@@ -36,7 +55,12 @@ class VPREncoder:
         self.config = config
         self.device = torch.device(config.device if torch.cuda.is_available() else "cpu")
 
-        if config.model == "mixvpr":
+        if config.model == "denseuav-vit":
+            if config.descriptor_dim != 512:
+                raise ValueError("DenseUAV ViT descriptor dimension must be 512")
+            self.model = load_denseuav_vit(self.device)
+            self.transform = DENSEUAV_TRANSFORM
+        elif config.model == "mixvpr":
             self.model = load_mixvpr(config.descriptor_dim, config.cache_dir, self.device)
             self.transform = MIXVPR_TRANSFORM
         elif config.model == "cosplace":
@@ -73,3 +97,28 @@ class VPREncoder:
     @torch.inference_mode()
     def encode_image(self, image_path: str | Path) -> np.ndarray:
         return self.encode_paths([image_path], show_progress=False)[0]
+
+    @torch.inference_mode()
+    def encode_query(self, image_path: str | Path) -> np.ndarray:
+        dataset = _QueryRotationDataset(
+            image_path,
+            self.transform,
+            rotations=self.config.query_rotations,
+        )
+        loader = DataLoader(
+            dataset,
+            batch_size=self.config.query_rotations,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=self.device.type == "cuda",
+        )
+        descriptors = np.zeros(
+            (self.config.query_rotations, self.config.descriptor_dim),
+            dtype=np.float32,
+        )
+        for batch, indices in loader:
+            batch = batch.to(self.device, non_blocking=True)
+            outputs = self.model(batch)
+            outputs = torch.nn.functional.normalize(outputs, p=2, dim=1)
+            descriptors[indices.numpy()] = outputs.cpu().numpy()
+        return descriptors

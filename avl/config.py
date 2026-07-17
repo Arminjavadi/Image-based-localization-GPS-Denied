@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 
-ModelName = Literal["mixvpr", "cosplace"]
+ModelName = Literal["denseuav-vit", "mixvpr", "cosplace"]
 IndexType = Literal["hnsw", "ivfpq", "flat"]
 
 
@@ -13,11 +13,12 @@ IndexType = Literal["hnsw", "ivfpq", "flat"]
 class AVLConfig:
     """Runtime configuration for AVL indexing and localization."""
 
-    model: ModelName = "mixvpr"
-    descriptor_dim: int = 4096
+    model: ModelName = "denseuav-vit"
+    descriptor_dim: int = 512
     cosplace_backbone: str = "ResNet101"
     device: str = "cuda"
     batch_size: int = 16
+    query_rotations: int = 4
 
     index_type: IndexType = "hnsw"
     hnsw_m: int = 32
@@ -34,3 +35,5 @@ class AVLConfig:
 
     def __post_init__(self) -> None:
         self.cache_dir = Path(self.cache_dir)
+        if self.query_rotations not in {1, 4}:
+            raise ValueError("query_rotations must be 1 or 4")

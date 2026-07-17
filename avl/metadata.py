@@ -22,10 +22,15 @@ class ReferenceRecord:
 
 def load_reference_metadata(csv_path: Path, base_dir: Path | None = None) -> list[ReferenceRecord]:
     """Load geo-tagged reference metadata from CSV."""
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, dtype={"image_path": "string", "image_id": "string"})
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(f"Metadata CSV missing required columns: {missing}")
+    if "expected_image_id" in df.columns and "image_id" not in df.columns:
+        raise ValueError(
+            "This is a query metadata CSV, not a reference database. "
+            "Choose a reference CSV containing an image_id column."
+        )
 
     records: list[ReferenceRecord] = []
     for row in df.itertuples(index=False):
@@ -50,7 +55,7 @@ def _optional_float(row, name: str) -> float | None:
     if name not in row._fields:
         return None
     value = getattr(row, name)
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None or pd.isna(value):
         return None
     return float(value)
 
@@ -59,6 +64,6 @@ def _optional_str(row, name: str) -> str | None:
     if name not in row._fields:
         return None
     value = getattr(row, name)
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None or pd.isna(value):
         return None
     return str(value)

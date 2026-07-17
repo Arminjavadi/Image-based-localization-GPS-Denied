@@ -1,0 +1,2 @@
+image_path,latitude,longitude,expected_image_id
+examples/queries/query.jpg,48.85854,2.29464,ref_04
