@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -23,9 +22,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from avl.geo import _to_local_xy  # noqa: E402
-from avl.nav.sparse_vo import SparseVO, nadir_pixel  # noqa: E402
+from avl.nav.sparse_vo import measure_track  # noqa: E402
 from avl.pipeline import camera_k_for  # noqa: E402
-from avl.rerank import load_gray  # noqa: E402
 from avl.terrain import TerrainModel  # noqa: E402
 
 DATA = Path("data/visloc_avl")
@@ -34,8 +32,8 @@ OUT = Path("artifacts/visloc/vo_real")
 MIN_AGL_M = 50.0      # take-off / landing frames: no usable ground scale
 
 
-def run_map(job: tuple[str, int, int, float | None, bool]) -> Path:
-    tag, max_frames, long_side, k_override, tilt = job
+def run_map(job: tuple[str, int, int, float | None, bool, Path]) -> Path:
+    tag, max_frames, long_side, k_override, tilt, out_dir = job
     region = tag.split("_")[0][1:]
     q = pd.read_csv(DATA / tag / "queries.csv")
     if max_frames:
@@ -50,41 +48,29 @@ def run_map(job: tuple[str, int, int, float | None, bool]) -> Path:
     x, y = _to_local_xy(q.latitude.to_numpy(), q.longitude.to_numpy(), q.latitude[0], q.longitude[0])
     gt = np.c_[x, y]
 
-    vo = SparseVO(long_side=long_side)
-    rows, prev = [], None
-    t0 = time.time()
-    for i, path in enumerate(q.image_path):
-        gray = load_gray(path, long_side)
-        size = (gray.shape[1], gray.shape[0])
-        feat = vo.features(gray)
-        focal = size[0] / k
-        nad = nadir_pixel(size, focal, log.Omega.iloc[i], log.Kappa.iloc[i]) if tilt else None
-        if prev is not None and min(agl[i - 1], agl[i]) < MIN_AGL_M:
-            d = gt[i] - gt[i - 1]
-            rows.append({"frame": i, "image_id": q.image_id.iloc[i], "dt_s": t[i] - t[i - 1], "ok": False,
-                         "reason": f"below {MIN_AGL_M:.0f} m AGL", "gt_east_m": d[0], "gt_north_m": d[1],
-                         "gt_step_m": float(np.hypot(*d))})
-        elif prev is not None:
-            feat_a, size_a, nad_a = prev
-            step = vo.step(feat_a, feat, size_a, size, k * agl[i - 1] / size_a[0], q.yaw_deg.iloc[i - 1],
-                           scale_hint=agl[i] / agl[i - 1], nadir_a=nad_a, nadir_b=nad)
-            d = gt[i] - gt[i - 1]
-            err = np.hypot(step.east_m - d[0], step.north_m - d[1])
-            rows.append({"frame": i, "image_id": q.image_id.iloc[i], "dt_s": t[i] - t[i - 1],
-                         "ok": step.ok, "reason": step.reason, "east_m": step.east_m, "north_m": step.north_m,
-                         "inliers": step.inliers, "matches": step.matches, "scale": step.scale,
-                         "rot_deg": step.rot_deg, "gt_east_m": d[0], "gt_north_m": d[1],
-                         "gt_step_m": float(np.hypot(*d)), "err_m": err,
-                         "rel_err": err / max(float(np.hypot(*d)), 1.0)})
-        prev = (feat, size, nad)
-    OUT.mkdir(parents=True, exist_ok=True)
-    out = OUT / f"{tag}{'' if tilt else '_notilt'}_vo.csv"
+    track = measure_track(
+        list(q.image_path), q.yaw_deg.to_numpy(), agl, k,
+        log.Omega.to_numpy() if tilt else None, log.Kappa.to_numpy() if tilt else None,
+        long_side=long_side, min_agl_m=MIN_AGL_M,
+    )
+    rows = []
+    for i in range(1, len(q)):
+        d = gt[i] - gt[i - 1]
+        est = track.steps[i - 1]
+        err = float(np.hypot(*(est - d))) if track.ok[i - 1] else float("nan")
+        rows.append({"frame": i, "image_id": q.image_id.iloc[i], "dt_s": t[i] - t[i - 1],
+                     "ok": bool(track.ok[i - 1]), "reason": track.reasons[i - 1],
+                     "east_m": est[0], "north_m": est[1], "inliers": int(track.inliers[i - 1]),
+                     "gt_east_m": d[0], "gt_north_m": d[1], "gt_step_m": float(np.hypot(*d)),
+                     "err_m": err, "rel_err": err / max(float(np.hypot(*d)), 1.0)})
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"{tag}{'' if tilt else '_notilt'}_vo.csv"
     df = pd.DataFrame(rows)
     df.to_csv(out, index=False)
     ok = df[df.ok]
     print(f"{tag}: {len(ok)}/{len(df)} steps ok, k={k:.3f}, median rel err {100 * ok.rel_err.median():.1f} %, "
           f"p90 {100 * ok.rel_err.quantile(0.9):.1f} %, median {ok.err_m.median():.1f} m "
-          f"({(time.time() - t0) / len(q):.2f} s/frame)", flush=True)
+          f"({track.seconds / len(q):.2f} s/frame)", flush=True)
     return out
 
 
@@ -96,8 +82,9 @@ def main() -> None:
     ap.add_argument("--camera-k", type=float, default=None, help="override the per-region k")
     ap.add_argument("--no-tilt", action="store_true", help="use the image centre, not the nadir pixel")
     ap.add_argument("--jobs", type=int, default=4)
+    ap.add_argument("--out-dir", type=Path, default=OUT)
     args = ap.parse_args()
-    jobs = [(m, args.max_frames, args.long_side, args.camera_k, not args.no_tilt) for m in args.maps]
+    jobs = [(m, args.max_frames, args.long_side, args.camera_k, not args.no_tilt, args.out_dir) for m in args.maps]
     with Pool(min(args.jobs, len(jobs))) as pool:
         pool.map(run_map, jobs)
 

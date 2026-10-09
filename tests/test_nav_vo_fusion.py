@@ -56,7 +56,7 @@ class TestVoFusion(unittest.TestCase):
         case = self._case(level, _sims(self.gt, self.refs, wrong))
         avl_err = np.hypot(*(vf.avl_top1(case) - self.gt).T)
         self.assertTrue(np.all(avl_err[wrong] > 700))
-        for name in ("kf", "kf_reanchor", "kf_window", "pf", "pgo"):
+        for name in ("kf", "kf_reanchor", "kf_window", "pf", "pgo", "hybrid"):
             est = vf.METHODS[name](case, np.random.default_rng(0))
             err = np.hypot(*(est - self.gt).T)
             self.assertLess(np.percentile(err[1:], 95), 150, name)
@@ -70,6 +70,28 @@ class TestVoFusion(unittest.TestCase):
         fixed = np.hypot(*(vf.kf_reanchor(case) - self.gt).T)
         self.assertGreater(np.median(plain[-20:]), 400)
         self.assertLess(np.median(fixed[-20:]), 100)
+
+    def test_hybrid_reseeds_from_a_wrong_start(self):
+        level = vf.VoLevel(0.0, 0.0, 0.0, 0.0, 1.0, max_gap_s=np.inf)
+        case = self._case(level, _sims(self.gt, self.refs))
+        case.gt = case.gt.copy()
+        case.gt[0] += 600.0          # the filters are told a wrong start
+        case_pf_global = vf.ParticleFilter(case.refs, case.tile_stride_m, np.random.default_rng(0))
+        self.assertEqual(case_pf_global.p.shape, (1000, 2))   # kidnapped init covers the map
+        err = np.hypot(*(vf.hybrid(case, np.random.default_rng(0)) - self.gt).T)
+        # the PF itself starts at the wrong place too; its recovery particles find the
+        # true track and the KF is re-seeded once the PF is confident
+        self.assertLess(np.median(err[-20:]), 100)
+
+    def test_frames_without_fix_only_propagate(self):
+        level = vf.VoLevel(0.0, 0.0, 0.0, 0.0, 0.0, max_gap_s=np.inf)
+        wrong = list(range(1, len(self.gt)))
+        case = self._case(level, _sims(self.gt, self.refs, wrong))
+        case.has_fix = np.zeros(len(self.gt), bool)        # every fix is garbage but masked
+        for name in vf.FRAME_FILTERS:
+            est = vf.METHODS[name](case, np.random.default_rng(0))
+            err = np.hypot(*(est - self.gt).T)
+            self.assertLess(err.max(), 30, name)            # pure (perfect) odometry
 
     def test_rigid_fit_recovers_transform(self):
         src = self.rng.normal(0, 300, (20, 2))

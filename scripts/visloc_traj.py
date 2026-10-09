@@ -1,4 +1,14 @@
-"""Trajectory-mode localization: VPR + simulated IMU fused by an error-state EKF.
+"""Trajectory-mode localization: VPR fused with odometry.
+
+Two families of filter (``--filter``):
+
+* ``eskf`` - VPR + simulated IMU through the 15-state error-state EKF (default).
+* ``kf | kf_reanchor | kf_window | pf | pgo | hybrid`` - frame-rate 2-D filters
+  from :mod:`avl.nav.vo_fusion`, driven by *real* frame-to-frame visual odometry
+  (:mod:`avl.nav.sparse_vo`) with an IMU coast where VO fails, and fusing the full
+  per-tile similarity map (the particle filter uses all of it, not only the top-5).
+  ``hybrid`` (particle filter supervising a windowed KF) is the recommended one,
+  see docs/VO_AVL_Fusion_Experiment.md.
 
 The time-ordered counterpart to scripts/visloc_eval.py. For every frame of a
 UAV-VisLoc trajectory it runs the *same* retrieval + geo-fusion as the rest of the
@@ -44,6 +54,7 @@ from avl.nav import (
     trajectory_metrics,
 )
 from avl.nav.metrics import along_cross_track, horizontal_error, path_length
+from avl.nav.vo_fusion import FRAME_FILTERS
 
 # avl.retrieval pulls in torch/faiss; only imported for the real-VPR path
 NATIVE_DIM = {
@@ -107,7 +118,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--imu-grade", default="consumer", choices=[*PRESETS, "perfect"])
     p.add_argument("--imu-scale", type=float, default=1.0,
                    help="multiply every IMU error magnitude (quick 'custom' knob)")
-    p.add_argument("--filter", default="eskf", choices=["eskf"])
+    p.add_argument("--filter", default="eskf", choices=["eskf", *FRAME_FILTERS],
+                   help="eskf = IMU-driven error-state EKF; the others fuse real visual odometry "
+                        "with the per-tile similarity map (needs real retrieval)")
+    p.add_argument("--camera-k", type=float, default=None,
+                   help="VO ground scale: full-frame ground width / AGL (default: per-region constant)")
+    p.add_argument("--vo-cache", type=Path, default=None,
+                   help="optional .npz to reuse/store the VO steps of this frame list")
+    p.add_argument("--dem-dir", type=Path, default=Path("data/dem/copernicus_glo30"))
     p.add_argument("--fuse-altitude", action="store_true")
     p.add_argument("--init-vel", choices=["known", "zero"], default="known")
 
@@ -430,7 +448,78 @@ def real_mission(args):
         "query_s": time.perf_counter() - qt0,
         "localize_frame": localize_frame,
         "frame_scores": frame_scores,
+        "paths": traj["_path"].tolist(),
+        "stems": traj["_stem"].tolist(),
         "ref_lat": references.latitude, "ref_lon": references.longitude,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# frame-rate filters: real visual odometry + the per-tile similarity map
+# --------------------------------------------------------------------------- #
+def _attitude(region_csv: Path | None, stems: list[str]) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """UAV-VisLoc camera tilt (Omega, Kappa) per frame, or (None, None)."""
+    if region_csv is None:
+        return None, None
+    reg = pd.read_csv(region_csv)
+    if not {"Omega", "Kappa", "filename"} <= set(reg.columns):
+        return None, None
+    reg.index = reg["filename"].map(lambda f: Path(str(f)).stem)
+    att = reg.reindex(stems)
+    if att[["Omega", "Kappa"]].isna().any().any():
+        return None, None
+    return att["Omega"].to_numpy(dtype=float), att["Kappa"].to_numpy(dtype=float)
+
+
+def frame_filter_mission(args, fr: dict, lf: LocalFrame, gt_enu: np.ndarray, t_s: np.ndarray,
+                         has_fix: np.ndarray) -> dict:
+    from avl.nav import vo_fusion as vf
+    from avl.nav.sparse_vo import VoTrack, measure_track
+    from avl.pipeline import camera_k_for, region_of
+    from avl.terrain import TerrainModel
+
+    if "frame_scores" not in fr:
+        raise SystemExit(f"--filter {args.filter} needs real retrieval (not --synthetic-path)")
+    n = fr["n"]
+    k = args.camera_k
+    if k is None:
+        k, why = camera_k_for(region_of(args.refs))
+        if k is None:
+            raise SystemExit(f"visual odometry needs --camera-k ({why})")
+    agl = TerrainModel(args.dem_dir).agl(fr["gt_alt"], fr["gt_lat"], fr["gt_lon"])
+    omega, kappa = _attitude(args.region_csv, fr["stems"])
+
+    track = None
+    if args.vo_cache is not None and args.vo_cache.exists():
+        z = np.load(args.vo_cache, allow_pickle=False)
+        if list(z["stems"]) == list(fr["stems"]) and float(z["k"]) == float(k):
+            track = VoTrack(z["steps"], z["ok"], z["inliers"], [""] * (n - 1), float(z["seconds"]))
+            print(f"[traj] VO steps from {args.vo_cache}", flush=True)
+    if track is None:
+        print(f"[traj] visual odometry over {n} frames (k {k:.3f}, "
+              f"{'tilt-corrected' if omega is not None else 'nadir assumed'})", flush=True)
+
+        def progress(done: int, total: int) -> None:
+            if done % 10 == 0 or done == total:
+                print(f"[traj]   {done}/{total} frames odometry", flush=True)
+
+        track = measure_track(fr["paths"], fr["yaw"], agl, k, omega, kappa, progress=progress)
+        if args.vo_cache is not None:
+            args.vo_cache.parent.mkdir(parents=True, exist_ok=True)
+            np.savez(args.vo_cache, steps=track.steps, ok=track.ok, inliers=track.inliers,
+                     stems=np.array(fr["stems"]), k=k, seconds=track.seconds)
+
+    rng = np.random.default_rng(args.seed)
+    vo, sig, ok = vf.real_vo(gt_enu[:, :2], t_s, vf.RealVo(track.steps, track.ok), rng)
+    refs_xy = lf.geo_to_enu(np.asarray(fr["ref_lat"]), np.asarray(fr["ref_lon"]))[:, :2]
+    case = vf.Case(gt_enu[:, :2], refs_xy, np.stack(fr["frame_scores"]), vo, sig,
+                   vf.tile_stride(refs_xy), has_fix)
+    t0 = time.perf_counter()
+    est = vf.METHODS[args.filter](case, np.random.default_rng(args.seed))
+    filt_ms = 1000.0 * (time.perf_counter() - t0) / n
+    return {
+        "est_en": est, "vo_en": vf.vo_only(case), "vo_ok": ok, "camera_k": float(k),
+        "vo_ms_per_frame": 1000.0 * track.seconds / n, "filter_ms_per_frame": filt_ms,
     }
 
 
@@ -518,16 +607,36 @@ def main() -> int:
                    pos_enu=lf.geo_to_enu(win_lat[i], win_lon[i], alt_i)[:m],
                    confidence=float(res.confidence), spread_m=float(res.spread_m))
 
-    cfg = EskfConfig(fuse_altitude=args.fuse_altitude)
-    if "sigma_floor_m" in fr:  # synthetic mode: use the sampled error level, homoscedastic
-        cfg.sigma_floor_m = fr["sigma_floor_m"]
-        cfg.alpha_spread = 0.0
-        cfg.beta_conf = 0.0
-        print(f"[traj] filter R floor set to {cfg.sigma_floor_m:.0f} m (from the error pool)", flush=True)
-    fused = run_filter(imu, fixes, x0, default_p0(), cfg, args.filter,
-                       resolve=resolve if windowed else None)
-    fused_enu = fused.at_frames(imu.frame_grid_idx)
-    gated_frames = {fr for fr, g in zip(fused.fix_frames, fused.fix_gated) if g}
+    vo_res = None
+    if args.filter == "eskf":
+        cfg = EskfConfig(fuse_altitude=args.fuse_altitude)
+        if "sigma_floor_m" in fr:  # synthetic mode: use the sampled error level, homoscedastic
+            cfg.sigma_floor_m = fr["sigma_floor_m"]
+            cfg.alpha_spread = 0.0
+            cfg.beta_conf = 0.0
+            print(f"[traj] filter R floor set to {cfg.sigma_floor_m:.0f} m (from the error pool)", flush=True)
+        fused = run_filter(imu, fixes, x0, default_p0(), cfg, args.filter,
+                           resolve=resolve if windowed else None)
+        fused_enu = fused.at_frames(imu.frame_grid_idx)
+        gated_frames = {fr for fr, g in zip(fused.fix_frames, fused.fix_gated) if g}
+        P_sigma = fused.pos_sigma_h[imu.frame_grid_idx]
+        ba_norm = np.linalg.norm(fused.bias_acc[imu.frame_grid_idx], axis=1)
+        bg_norm = np.linalg.norm(fused.bias_gyro[imu.frame_grid_idx], axis=1)
+        vel_f = fused.vel[imu.frame_grid_idx]
+        n_acc = int(sum(not g for g in fused.fix_gated))
+        n_gate = int(sum(fused.fix_gated))
+        nees = fused.fix_nees
+    else:
+        if windowed:
+            print("[traj] --prior-k applies to eskf only (kf_window / hybrid search their own window)",
+                  flush=True)
+        vo_res = frame_filter_mission(args, fr, lf, gt_enu, t_s, fix_used)
+        fused_enu = np.c_[vo_res["est_en"], gt_enu[:, 2]]      # altitude: barometer
+        gated_frames = set()
+        P_sigma = np.full(n, np.nan)
+        ba_norm = bg_norm = np.full(n, np.nan)
+        vel_f = np.full((n, 3), np.nan)
+        n_acc, n_gate, nees = int(fix_used.sum()), 0, None
 
     # ---- back to geo + errors ---------------------------------
     ins_lat, ins_lon, ins_alt = lf.enu_to_geo(ins_enu[:, 0], ins_enu[:, 1], ins_enu[:, 2])
@@ -535,21 +644,15 @@ def main() -> int:
     err_ins = horizontal_error(ins_enu, gt_enu)
     err_fused = horizontal_error(fused_enu, gt_enu)
     along, cross = along_cross_track(fused_enu, gt_enu)
-    P_sigma = fused.pos_sigma_h[imu.frame_grid_idx]
-    ba_norm = np.linalg.norm(fused.bias_acc[imu.frame_grid_idx], axis=1)
-    bg_norm = np.linalg.norm(fused.bias_gyro[imu.frame_grid_idx], axis=1)
-    vel_f = fused.vel[imu.frame_grid_idx]
 
     # ---- metrics --------------------------------------------
     path_m = path_length(gt_enu)
-    n_acc = int(sum(not g for g in fused.fix_gated))
-    n_gate = int(sum(fused.fix_gated))
     have_vpr = np.isfinite(vpr_err)
 
     ins_metrics = trajectory_metrics(ins_enu, gt_enu, total_path_m=path_m, n_frames=n)
     fused_metrics = trajectory_metrics(
         fused_enu, gt_enu, total_path_m=path_m, n_frames=n,
-        n_fix_accepted=n_acc, n_fix_gated=n_gate, nees=fused.fix_nees,
+        n_fix_accepted=n_acc, n_fix_gated=n_gate, nees=nees,
         fuse_altitude=args.fuse_altitude,
     )
     vpr_vals = vpr_err[have_vpr]
@@ -567,6 +670,14 @@ def main() -> int:
         "within_m": {str(k): float((vpr_vals <= k).mean()) for k in THRESHOLDS_M},
     }
     fused_metrics["within_m"] = {str(k): float((err_fused <= k).mean()) for k in THRESHOLDS_M}
+    vo_metrics = None
+    if vo_res is not None:
+        vo_enu = np.c_[vo_res["vo_en"], gt_enu[:, 2]]
+        vo_metrics = trajectory_metrics(vo_enu, gt_enu, total_path_m=path_m, n_frames=n)
+        vo_metrics["steps_ok"] = float(np.mean(vo_res["vo_ok"]))
+        vo_metrics["camera_k"] = vo_res["camera_k"]
+        vo_metrics["ms_per_frame"] = vo_res["vo_ms_per_frame"]
+        fused_metrics["filter_ms_per_frame"] = vo_res["filter_ms_per_frame"]
     win_metrics = None
     if windowed:
         wv = win_err[np.isfinite(win_err)]
@@ -619,6 +730,7 @@ def main() -> int:
         "model": args.model,
         "fusion": args.fusion,
         "filter": args.filter,
+        "odometry": "imu" if args.filter == "eskf" else "visual odometry (+ IMU coast)",
         "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "refs_csv": str(args.refs),
         "queries_csv": str(args.queries),
@@ -641,6 +753,7 @@ def main() -> int:
         "ins_only": ins_metrics,
         "vpr_only": vpr_metrics,
         "vpr_windowed": win_metrics,
+        "vo_only": vo_metrics,
         "fused": fused_metrics,
         "series": {
             "t_s": t_s.round(3).tolist(),
@@ -655,7 +768,8 @@ def main() -> int:
             "err_ins_m": err_ins.round(2).tolist(),
             "err_vpr_m": [None if not np.isfinite(v) else round(float(v), 2) for v in vpr_err],
             "err_fused_m": err_fused.round(2).tolist(),
-            "P_sigma_m": P_sigma.round(2).tolist(),
+            "P_sigma_m": [None if not np.isfinite(v) else round(float(v), 2) for v in P_sigma],
+            "vo_en": vo_res["vo_en"].round(2).tolist() if vo_res is not None else None,
             "fix_used": fix_used.astype(int).tolist(),
             "fix_gated": [1 if i in gated_frames else 0 for i in range(n)],
         },
@@ -674,13 +788,16 @@ def main() -> int:
           f"{payload['query_ms_per_frame']:.0f} ms/frame")
     print("horizontal error vs ground truth:")
     line("IMU-only", ins_metrics, f"drift {ins_metrics['drift_rate_pct']:.2f}%")
+    if vo_metrics:
+        line("VO-only", vo_metrics, f"drift {vo_metrics['drift_rate_pct']:.2f}%  "
+             f"steps ok {100 * vo_metrics['steps_ok']:.0f}%  {vo_metrics['ms_per_frame']:.0f} ms/frame")
     line("VPR-only", vpr_metrics, f"({vpr_metrics['n_frames_with_fix']} fixes, "
          f"{vpr_metrics['n_outliers_gt_200m']} >200m)")
     if win_metrics:
         line("VPR-window", win_metrics, f"({win_metrics['n_fixes']} fixes, "
              f"{win_metrics['n_outliers_gt_200m']} >200m, {win_metrics['window_tiles_mean']:.1f} tiles, "
              f"r~{win_metrics['window_radius_m_median']:.0f}m, {win_metrics['n_escaped']} escaped)")
-    line("Fused", fused_metrics, f"acc {n_acc} gated {n_gate} "
+    line(f"Fused/{args.filter}", fused_metrics, f"acc {n_acc} gated {n_gate} "
          f"avail {fused_metrics.get('fix_availability', 0):.2f}")
     print(f"  fused within: " + "  ".join(
         f"{k}m {100*fused_metrics['within_m'][str(k)]:5.1f}%" for k in THRESHOLDS_M))

@@ -197,10 +197,15 @@ def tile_m_of(path: str | Path | None) -> float | None:
 
 # Camera constant k = full-frame ground width / AGL = 2 tan(HFOV / 2), measured on
 # UAV-VisLoc by matching frames to the map at 11 patch sizes (report §5.7). Camera B
-# (3976 px; regions 01-04, 06, 08, 09, 11) needs one constant; the 3000 px frames of
-# 05 and 10 come from two different lenses, and r10's is unresolved (1.20-1.48). On a
-# real drone k comes from the lens datasheet.
-UAV_VISLOC_CAMERA_K: dict[str, float] = {"05": 0.971, "06": 1.050, "10": 1.197, "11": 0.959}
+# (3976 px; regions 01-04, 06, 08, 09, 11) needs one constant. The 3000 px frames of
+# 05 and 10 look like one lens too. r10's patch-size scan was unresolved (MegaLoc 1.48
+# vs DenseUAV-ViT 1.20); frame-to-frame visual odometry measures the ground scale
+# directly, and at k = 1.197 its steps come out 1.21x the GPS steps, so
+# k = 1.197 / 1.21 = 0.988 (r05: 0.971). Retrieval is unchanged by this: the
+# altitude gate already left every r10 frame uncropped at 1.197, and a smaller k only
+# shrinks the footprint further. See docs/VO_AVL_Fusion_Experiment.md. On a real drone
+# k comes from the lens datasheet.
+UAV_VISLOC_CAMERA_K: dict[str, float] = {"05": 0.971, "06": 1.050, "10": 0.988, "11": 0.959}
 UAV_VISLOC_CAMERA_B = ("01", "02", "03", "04", "06", "08", "09", "11")
 CAMERA_B_K = 1.00
 

@@ -104,3 +104,63 @@ def nadir_pixel(size: tuple[int, int], focal_px: float, omega_deg: float, kappa_
     w, h = size
     return (w / 2.0 + focal_px * np.tan(np.radians(omega_deg)),
             h / 2.0 + focal_px * np.tan(np.radians(kappa_deg)))
+
+
+@dataclass
+class VoTrack:
+    """VO over a frame sequence: step ``k`` goes from frame ``k`` to ``k + 1``."""
+
+    steps: np.ndarray       # (N-1, 2) east/north metres; NaN where not ok
+    ok: np.ndarray          # (N-1,) bool
+    inliers: np.ndarray     # (N-1,) int
+    reasons: list[str]
+    seconds: float          # wall time
+
+
+def measure_track(
+    paths, heading_deg, agl_m, camera_k: float, omega_deg=None, kappa_deg=None,
+    long_side: int = 1200, min_agl_m: float = 50.0, progress=None,
+) -> VoTrack:
+    """Frame-to-frame VO over ``paths`` (recorded order).
+
+    ``heading_deg``: compass direction of each image's top edge. ``agl_m``: height
+    above ground per frame (baro - DEM). ``omega_deg``/``kappa_deg``: camera tilt
+    per frame (UAV-VisLoc's Omega/Kappa; None = assume nadir). Steps where either
+    frame is below ``min_agl_m`` (take-off, landing) are not attempted.
+    ``progress(done, total)`` is called after each frame.
+    """
+    import time
+
+    from avl.rerank import load_gray
+
+    n = len(paths)
+    vo = SparseVO(long_side=long_side)
+    steps = np.full((max(n - 1, 0), 2), np.nan)
+    ok = np.zeros(max(n - 1, 0), bool)
+    inliers = np.zeros(max(n - 1, 0), int)
+    reasons = [""] * max(n - 1, 0)
+    t0 = time.perf_counter()
+    prev = None
+    for i in range(n):
+        gray = load_gray(paths[i], long_side)
+        size = (gray.shape[1], gray.shape[0])
+        feat = vo.features(gray)
+        nad = None
+        if omega_deg is not None and kappa_deg is not None:
+            nad = nadir_pixel(size, size[0] / camera_k, float(omega_deg[i]), float(kappa_deg[i]))
+        if prev is not None:
+            k = i - 1
+            feat_a, size_a, nad_a = prev
+            if not (min(agl_m[k], agl_m[i]) >= min_agl_m):
+                reasons[k] = f"below {min_agl_m:.0f} m AGL"
+            else:
+                s = vo.step(feat_a, feat, size_a, size, camera_k * agl_m[k] / size_a[0],
+                            float(heading_deg[k]), scale_hint=agl_m[i] / agl_m[k],
+                            nadir_a=nad_a, nadir_b=nad)
+                ok[k], inliers[k], reasons[k] = s.ok, s.inliers, s.reason
+                if s.ok:
+                    steps[k] = (s.east_m, s.north_m)
+        prev = (feat, size, nad)
+        if progress is not None:
+            progress(i + 1, n)
+    return VoTrack(steps, ok, inliers, reasons, time.perf_counter() - t0)

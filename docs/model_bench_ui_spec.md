@@ -375,13 +375,13 @@ Both shell out to **`scripts/visloc_traj.py`** (the GUI never imports Torch), re
 the left panel's reference database / query set / active encoder / geo-fusion /
 rotations / crop, and stream stdout to the shared Comparison-tab log.
 
-### 12.2 "Inertial fusion" control group (Trajectory tab; Studio reads the same widgets)
+### 12.2 "Fusion" control group (Trajectory tab; Studio reads the same widgets)
 
 | Control | Values / default | `visloc_traj.py` flag |
 |---|---|---|
 | IMU error model | consumer MEMS *(def)* / tactical / none — perfect IMU | `--imu-grade {consumer,tactical,perfect}` |
 | IMU noise × | 0.1–10.0, default 1.0 | `--imu-scale` |
-| Fusion filter | error-state EKF (15-state) *(only entry)* | `--filter eskf` |
+| Fusion filter | error-state EKF · IMU *(def)* / hybrid PF→KF / particle filter / Kalman + re-anchor / Kalman + search window / robust pose graph — the last five run on real visual odometry | `--filter {eskf,hybrid,pf,kf_reanchor,kf_window,pgo}`; the VO filters also get `--scores-cache` / `--vo-cache` under `artifacts/visloc/traj_cache/` so switching filter re-runs only the fusion. Studio always sends `eskf` (a drawn route has no images). |
 | VPR fix rate | every N frames, 1–20 | `--vpr-every` |
 | Fix dropouts | seconds, e.g. `120-180, 300-330` | `--dropout` |
 | Initial velocity | known (from GT) *(def)* / zero | `--init-vel` |

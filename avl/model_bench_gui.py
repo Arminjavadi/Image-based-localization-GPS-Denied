@@ -193,8 +193,15 @@ TRAJ_IMU_CHOICES: list[tuple[str, str]] = [
     ("none — perfect IMU", "perfect"),
 ]
 TRAJ_FILTER_CHOICES: list[tuple[str, str]] = [
-    ("error-state EKF (15-state)", "eskf"),
+    ("error-state EKF · IMU (15-state)", "eskf"),
+    ("hybrid PF→KF · visual odometry", "hybrid"),
+    ("particle filter · visual odometry", "pf"),
+    ("Kalman + re-anchor · visual odometry", "kf_reanchor"),
+    ("Kalman + search window · visual odometry", "kf_window"),
+    ("robust pose graph · visual odometry", "pgo"),
 ]
+#: filters that run on real frame-to-frame visual odometry (avl.nav.vo_fusion)
+TRAJ_VO_FILTERS = {value for _, value in TRAJ_FILTER_CHOICES if value != "eskf"}
 
 # Strongest first (report §4): the dropdown and the ensemble spec follow this order.
 MODELS: list[tuple[str, str]] = [
@@ -2815,9 +2822,9 @@ class ModelBenchConsole(QMainWindow):
         layout.setSpacing(12)
 
         head = QHBoxLayout()
-        heading = QLabel("Flight  ·  VPR + IMU")
+        heading = QLabel("Flight  ·  VPR + odometry")
         heading.setObjectName("pageTitle")
-        sub = QLabel("fuse the per-frame VPR pose with a simulated IMU through an error-state Kalman filter")
+        sub = QLabel("fuse per-frame VPR with a simulated IMU or with real visual odometry")
         sub.setObjectName("hint")
         head.addWidget(heading)
         head.addWidget(sub)
@@ -2831,7 +2838,7 @@ class ModelBenchConsole(QMainWindow):
         cv.setContentsMargins(13, 12, 13, 12)
         cv.setSpacing(10)
 
-        box = QGroupBox("Inertial fusion")
+        box = QGroupBox("Fusion")
         grid = QGridLayout(box)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(9)
@@ -2842,6 +2849,12 @@ class ModelBenchConsole(QMainWindow):
         self.traj_filter = QComboBox()
         for label, value in TRAJ_FILTER_CHOICES:
             self.traj_filter.addItem(label, value)
+        self.traj_filter.setToolTip(
+            "EKF: VPR + simulated IMU. The visual-odometry filters measure frame-to-frame motion "
+            "from the images themselves (IMU only where VO fails) and fuse it with the full "
+            "per-tile similarity map; hybrid = particle filter supervising a windowed Kalman "
+            "filter, the best in docs/VO_AVL_Fusion_Experiment.md."
+        )
         self.traj_initvel = QComboBox()
         self.traj_initvel.addItem("known (from GT)", "known")
         self.traj_initvel.addItem("zero", "zero")
@@ -2920,14 +2933,14 @@ class ModelBenchConsole(QMainWindow):
         layout.addWidget(self.traj_err, 2)
 
         # -- metrics table -----------------------------------------
-        self.traj_table = QTableWidget(3, len(self.TRAJ_METRIC_COLS))
+        self.traj_table = QTableWidget(4, len(self.TRAJ_METRIC_COLS))
         self.traj_table.setHorizontalHeaderLabels(self.TRAJ_METRIC_COLS)
         self.traj_table.verticalHeader().setVisible(False)
         self.traj_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.traj_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.traj_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.traj_table.setFixedHeight(126)
-        for r, name in enumerate(("IMU-only", "VPR-only", "Fused")):
+        self.traj_table.setFixedHeight(152)
+        for r, name in enumerate(("IMU-only", "VPR-only", "Fused", "VO-only")):
             self.traj_table.setItem(r, 0, QTableWidgetItem(name))
             for c in range(1, len(self.TRAJ_METRIC_COLS)):
                 self.traj_table.setItem(r, c, QTableWidgetItem("–"))
@@ -2983,6 +2996,16 @@ class ModelBenchConsole(QMainWindow):
             "--out-dir", str(self.out_dir),
             "--ref-cache", str(self._ref_cache_path(refs, model)),
         ]
+        # per-frame scores and VO steps do not depend on the filter, so switching
+        # filters re-runs only the fusion (visloc_traj.py checks the frame list)
+        frames = (subset_file.stem if subset_file is not None
+                  else f"s{self.traj_stride.value()}_m{self.traj_max_frames.value()}")
+        rot = args[args.index("--rotations") + 1]
+        cache_dir = self.out_dir / "traj_cache"
+        args += ["--scores-cache",
+                 str(cache_dir / f"scores_{self._db_tag(refs, queries)}__{model}_r{rot}_{recipe.query_crop}_{frames}.npy")]
+        if self.traj_filter.currentData() in TRAJ_VO_FILTERS:
+            args += ["--vo-cache", str(cache_dir / f"vo_{queries.parent.name}_{frames}.npz")]
         if subset_file is not None:
             args += ["--frame-subset", str(subset_file)]
         else:
@@ -3064,15 +3087,25 @@ class ModelBenchConsole(QMainWindow):
         ins = series.get("ins_en", [])
         vpr = [p for p in series.get("vpr_en", []) if p]
         fused = series.get("fused_en", [])
+        vo = series.get("vo_en") or []
+        # with visual odometry the IMU only bridges VO failures; its free-running
+        # track (often km off) would set the map's scale, so VO-only replaces it
+        motion = ({"name": "VO-only", "pts": vo, "color": "#5ad1e6", "width": 1.4} if vo else
+                  {"name": "IMU-only", "pts": ins, "color": "#f07a7a", "width": 1.4})
         self.traj_map.set_series([
             {"name": "ground truth", "pts": gt, "color": "#cfd2de", "width": 1.6},
-            {"name": "IMU-only", "pts": ins, "color": "#f07a7a", "width": 1.4},
+            motion,
             {"name": "VPR fixes", "pts": vpr, "color": "#f0c04a", "dots": True, "width": 2.4},
             {"name": "fused", "pts": fused, "color": "#b5abfc", "width": 2.2},
         ])
 
         t = series.get("t_s", [])
         e_ins = series.get("err_ins_m", [])
+        if vo:
+            e_ins = [None if g is None or v is None else ((v[0] - g[0]) ** 2 + (v[1] - g[1]) ** 2) ** 0.5
+                     for v, g in zip(vo, gt)]
+        motion_name = "VO-only" if vo else "IMU-only"
+        motion_colour = "#5ad1e6" if vo else "#f07a7a"
         e_vpr = series.get("err_vpr_m", [])
         e_fused = series.get("err_fused_m", [])
         ref_max = max([v for v in (e_fused + [v for v in e_vpr if v is not None]) if v is not None]
@@ -3080,9 +3113,9 @@ class ModelBenchConsole(QMainWindow):
         cap = max(50.0, 4.0 * ref_max)
         ins_clipped = any(v is not None and v > cap for v in e_ins)
         err_series = [
-            {"name": f"IMU-only{' (clipped)' if ins_clipped else ''}",
+            {"name": f"{motion_name}{' (clipped)' if ins_clipped else ''}",
              "pts": [(t[i], min(e_ins[i], cap)) for i in range(len(e_ins)) if e_ins[i] is not None],
-             "color": "#f07a7a", "width": 1.3},
+             "color": motion_colour, "width": 1.3},
             {"name": "VPR-only",
              "pts": [(t[i], e_vpr[i]) for i in range(len(e_vpr)) if e_vpr[i] is not None],
              "color": "#f0c04a", "dots": True, "width": 2.2},
@@ -3095,15 +3128,20 @@ class ModelBenchConsole(QMainWindow):
         self._fill_traj_row(0, payload.get("ins_only", {}))
         self._fill_traj_row(1, payload.get("vpr_only", {}))
         self._fill_traj_row(2, payload.get("fused", {}))
+        self._fill_traj_row(3, payload.get("vo_only") or {})
 
         imu = payload.get("imu", {})
         self.traj_hint.setText(
             f"{payload.get('n_frames')} frames · {payload.get('duration_s', 0):.0f} s · "
             f"path {payload.get('path_length_m', 0) / 1000:.2f} km · "
-            f"IMU {imu.get('grade')}×{imu.get('scale', 1)} · "
-            f"{payload.get('query_ms_per_frame', 0):.0f} ms/frame · "
-            f"fixes acc {payload.get('fused', {}).get('fixes_accepted', '?')} / "
-            f"gated {payload.get('fused', {}).get('fixes_gated', '?')}"
+            f"{payload.get('filter', 'eskf')} · "
+            + (f"VO {100 * payload['vo_only'].get('steps_ok', 0):.0f}% steps ok · "
+               if payload.get("vo_only") else f"IMU {imu.get('grade')}×{imu.get('scale', 1)} · ")
+            + f"{payload.get('query_ms_per_frame', 0):.0f} ms/frame · "
+            + (f"fixes {payload.get('fused', {}).get('fixes_accepted', '?')}"
+               if payload.get("vo_only") else
+               f"fixes acc {payload.get('fused', {}).get('fixes_accepted', '?')} / "
+               f"gated {payload.get('fused', {}).get('fixes_gated', '?')}")
             + self._gate_warning(payload)
         )
         self._set_pipe_phase("done")
@@ -3390,7 +3428,8 @@ class ModelBenchConsole(QMainWindow):
             "--model", model,
             "--imu-grade", self.traj_imu.currentData(),
             "--imu-scale", f"{self.traj_imu_scale.value():g}",
-            "--filter", self.traj_filter.currentData(),
+            # a drawn mission has no images, so no visual odometry: always the IMU EKF
+            "--filter", "eskf",
             "--vpr-every", str(self.traj_vpr_every.value()),
             "--init-vel", self.traj_initvel.currentData(),
             "--seed", str(self.traj_seed.value()),

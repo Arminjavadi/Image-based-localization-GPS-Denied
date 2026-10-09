@@ -53,7 +53,7 @@ reproduces the benchmark frame by frame.
   candidates with local features + RANSAC and re-orders them by inlier count. See
   [Geometric re-ranking](#geometric-re-ranking).
 - **Geo fusion** — sphere-aware weighted average of the five strongest unique locations
-- **Trajectory mode** (`avl/nav/`, `scripts/visloc_traj.py`, Benchmark Console "Trajectory"/"Studio" tabs) — fuses the per-frame VPR pose with a simulated IMU through a 15-state error-state Kalman filter: continuous pose between fixes, χ²-gated outlier rejection, and coasting through VPR dropouts. See `docs/VisualInertial_AVL_Design.md`.
+- **Trajectory mode** (`avl/nav/`, `scripts/visloc_traj.py`, Benchmark Console "Trajectory"/"Studio" tabs) — fuses the per-frame VPR pose with a simulated IMU through a 15-state error-state Kalman filter: continuous pose between fixes, χ²-gated outlier rejection, and coasting through VPR dropouts. See `docs/VisualInertial_AVL_Design.md`. The same tab can instead fuse VPR with **real frame-to-frame visual odometry** (`avl/nav/sparse_vo.py`, `scripts/visloc_vo.py`) through a hybrid particle-filter/Kalman filter or the other `avl/nav/vo_fusion.py` filters (`--filter hybrid|pf|kf_reanchor|kf_window|pgo`). Results: `docs/VO_AVL_Fusion_Experiment.md`.
 
 The DenseUAV ViT checkpoint is downloaded from
 [`Bancie/UAV-Self-Positioning-23M-ZCN`](https://huggingface.co/Bancie/UAV-Self-Positioning-23M-ZCN)
@@ -515,7 +515,8 @@ avl/
   retrieval.py    # shared single-frame retrieval core
   terrain.py      # Copernicus GLO-30 DEM: terrain height, height above ground (AGL)
   scale.py        # camera footprint (k, HFOV, GSD) -> per-frame query crop for scale normalisation
-  nav/            # trajectory mode: IMU sim, strapdown INS, error-state EKF, mosaic raster
+  nav/            # trajectory mode: IMU sim, strapdown INS, error-state EKF, mosaic raster,
+                  #   sparse visual odometry, VO+AVL fusion filters (KF / PF / hybrid / pose graph)
 scripts/
   build_index.py
   localize.py
@@ -523,7 +524,9 @@ scripts/
   visloc_query.py # localize one image with a recipe
   check_localizer_parity.py  # does AVLLocalizer reproduce visloc_eval frame by frame?
   create_examples.py
-  visloc_traj.py  # time-ordered VPR + IMU fused trajectory
+  visloc_traj.py  # time-ordered VPR + IMU (ESKF) or VPR + visual odometry fused trajectory
+  visloc_vo.py    # frame-to-frame visual odometry on a prepared flight, error vs ground truth
+  vo_fusion_experiment.py  # offline comparison of VO+AVL fusion methods on cached descriptors
   nav_selfcheck.py
   visloc_scale.py # AGL / camera calibration / scale-normalisation experiment (report: docs/Scale_Normalization_Report.md)
 ```

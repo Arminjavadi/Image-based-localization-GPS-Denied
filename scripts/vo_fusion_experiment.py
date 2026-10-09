@@ -134,18 +134,19 @@ def real_vo_level(map_tag: str, n: int) -> vf.RealVo:
     return vf.RealVo(steps, ok)
 
 
-def run_flight(job: tuple[Flight, int, bool]) -> list[dict]:
-    f, seeds, use_real = job
+def run_flight(job: tuple[Flight, int, bool, list[str], list[str] | None]) -> list[dict]:
+    f, seeds, use_real, methods, level_names = job
     avl_acc = float(np.mean(np.hypot(*(f.refs[f.sims.argmax(1)] - f.gt).T) <= 100))
     levels = ({"real sparse VO": real_vo_level(f.setting.map_tag, len(f.gt))} if use_real
-              else vf.VO_LEVELS)
+              else {k: v for k, v in vf.VO_LEVELS.items() if level_names is None or k in level_names})
     rows = []
     for vo_name, vo_cfg in levels.items():
         for scenario in vf.SCENARIOS:
             for seed in range(seeds):
                 rng = np.random.default_rng(1000 * seed + 7)
                 case = vf.make_case(f.gt, f.t, f.refs, f.sims, vo_cfg, scenario, rng)
-                for method, fn in vf.METHODS.items():
+                for method in methods:
+                    fn = vf.METHODS[method]
                     t0 = time.perf_counter()
                     est = fn(case, np.random.default_rng(seed))
                     row = {"setting": f.setting.name, "region": f.setting.region, "avl_top1_100": avl_acc,
@@ -177,6 +178,8 @@ def main() -> None:
     ap.add_argument("--quick", action="store_true", help="1 seed, 4 settings")
     ap.add_argument("--seeds", type=int, default=5)
     ap.add_argument("--jobs", type=int, default=4, help="parallel flights")
+    ap.add_argument("--methods", nargs="+", default=list(vf.METHODS), choices=list(vf.METHODS))
+    ap.add_argument("--vo-levels", nargs="+", default=None, help="subset of the simulated VO levels")
     ap.add_argument("--real-vo", action="store_true",
                     help="use measured VO (artifacts/visloc/vo_real, scripts/visloc_vo.py) instead of the "
                          "simulated levels")
@@ -199,7 +202,7 @@ def main() -> None:
 
     seeds = 1 if args.quick else args.seeds
     with Pool(args.jobs) as pool:
-        rows = [r for part in pool.imap(run_flight, [(f, seeds, args.real_vo) for f in flights]) for r in part]
+        rows = [r for part in pool.imap(run_flight, [(f, seeds, args.real_vo, args.methods, args.vo_levels) for f in flights]) for r in part]
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows)

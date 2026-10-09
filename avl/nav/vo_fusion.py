@@ -27,6 +27,13 @@ Methods (see :data:`METHODS`):
 ``align``                       FoundLoc-style: RANSAC-fit the recent VO track to
                                 the AVL fixes (rigid 2-D), no known start.
 ``pf_kidnapped``                ``pf`` started uniformly over the map.
+``hybrid``                      ``pf`` as the global layer, a gated KF (search
+                                window) as the local fallback: the PF's mode is
+                                the output while the PF is confident, the KF
+                                carries the estimate when it is not.
+
+``Case.has_fix`` marks frames without an AVL fix (dropouts, a fix every Nth
+frame); the filters only propagate there.
 """
 from __future__ import annotations
 
@@ -172,10 +179,21 @@ class Case:
     vo: np.ndarray        # (N-1, 2)
     vo_sigma: np.ndarray  # (N-1,)
     tile_stride_m: float
+    has_fix: np.ndarray | None = None   # (N,) bool; None = every frame has a fix
 
     @property
     def start(self) -> np.ndarray:
         return self.gt[0]
+
+    def fix(self, k: int) -> bool:
+        return self.has_fix is None or bool(self.has_fix[k])
+
+
+def tile_stride(refs: np.ndarray) -> float:
+    """Median nearest-neighbour distance between map tiles."""
+    d = np.hypot(*(refs[:, None] - refs[None]).transpose(2, 0, 1))
+    np.fill_diagonal(d, np.inf)
+    return float(np.median(d.min(1)))
 
 
 def make_case(gt, t, refs, sims, level: VoLevel | RealVo, scenario: str, rng: np.random.Generator) -> Case:
@@ -189,9 +207,7 @@ def make_case(gt, t, refs, sims, level: VoLevel | RealVo, scenario: str, rng: np
                 lost[a - 1: min(b, len(gt)) - 1] = True
     make = real_vo if isinstance(level, RealVo) else simulate_vo
     vo, sig, _ = make(gt, t, level, rng, lost)
-    d = np.hypot(*(refs[:, None] - refs[None]).transpose(2, 0, 1))
-    np.fill_diagonal(d, np.inf)
-    return Case(gt, refs, sims, vo, sig, float(np.median(d.min(1))))
+    return Case(gt, refs, sims, vo, sig, tile_stride(refs))
 
 
 # ── AVL alone ──────────────────────────────────────────────────────────────────
@@ -251,6 +267,9 @@ def _kf(case: Case, window: bool, reanchor: bool, sigma_avl: float = 50.0, k_sig
     for k in range(1, len(case.sims)):
         x = x + case.vo[k - 1]
         P = P + np.eye(2) * case.vo_sigma[k - 1] ** 2
+        if not case.fix(k):
+            out.append(x.copy())
+            continue
         s = case.sims[k]
         S = P + R
         if window:
@@ -269,7 +288,10 @@ def _kf(case: Case, window: bool, reanchor: bool, sigma_avl: float = 50.0, k_sig
             x = x + K @ r
             P = (np.eye(2) - K) @ P
         if reanchor and k >= n_anchor:
-            last = np.arange(k - n_anchor + 1, k + 1)
+            last = np.array([j for j in range(1, k + 1) if case.fix(j)][-n_anchor:])
+            if len(last) < n_anchor:
+                out.append(x.copy())
+                continue
             moved = top1[last] + track[k] - track[last]
             centre = moved.mean(0)
             if np.hypot(*(moved - centre).T).max() <= anchor_m:
@@ -301,36 +323,72 @@ def _zscores(s: np.ndarray) -> np.ndarray:
     return (s - med) / mad
 
 
-def _pf(case: Case, rng: np.random.Generator, kidnapped: bool, n: int = 1000,
-        beta: float = 0.5, recover: float = 0.01) -> np.ndarray:
-    lo, hi = case.refs.min(0), case.refs.max(0)
-    if kidnapped:
-        p = rng.uniform(lo, hi, (n, 2))
-    else:
-        p = case.start + rng.normal(0, 10.0, (n, 2))
-    w = np.full(n, 1.0 / n)
-    cover = 0.75 * case.tile_stride_m + 25.0      # beyond this a particle is off-map
+class ParticleFilter:
+    """2-D particle filter weighted by an AVL similarity map over the tiles.
+
+    The likelihood of a particle is ``exp(beta * z)``, with ``z`` the robust
+    z-score of its nearest tile's similarity (off-map particles get the frame's
+    lowest score). A fraction ``recover`` of particles is re-drawn uniformly over
+    the map at every step, so the filter can leave a wrong mode.
+    """
+
+    def __init__(self, refs: np.ndarray, tile_stride_m: float, rng: np.random.Generator,
+                 start: np.ndarray | None = None, n: int = 1000, beta: float = 0.5,
+                 recover: float = 0.01, start_sigma_m: float = 10.0) -> None:
+        self.refs, self.rng, self.n, self.beta, self.recover = refs, rng, n, beta, recover
+        self.lo, self.hi = refs.min(0), refs.max(0)
+        self.p = (rng.uniform(self.lo, self.hi, (n, 2)) if start is None
+                  else start + rng.normal(0, start_sigma_m, (n, 2)))
+        self.w = np.full(n, 1.0 / n)
+        self.cover = 0.75 * tile_stride_m + 25.0      # beyond this a particle is off-map
+
+    def _nearest(self) -> tuple[np.ndarray, np.ndarray]:
+        d2 = ((self.p[:, None, :] - self.refs[None]) ** 2).sum(-1)
+        nearest = d2.argmin(1)
+        return nearest, d2[np.arange(self.n), nearest]
+
+    def predict(self, step: np.ndarray, sigma: float) -> None:
+        self.p = self.p + step + self.rng.normal(0, max(sigma, 5.0), (self.n, 2))
+        n_rec = int(self.recover * self.n)
+        if n_rec:
+            idx = self.rng.choice(self.n, n_rec, replace=False)
+            self.p[idx] = self.rng.uniform(self.lo, self.hi, (n_rec, 2))
+
+    def update(self, sims: np.ndarray) -> None:
+        z = _zscores(sims)
+        nearest, d2 = self._nearest()
+        zp = np.where(d2 <= self.cover**2, z[nearest], z.min())
+        logw = np.log(self.w + 1e-300) + self.beta * zp
+        w = np.exp(logw - logw.max())
+        self.w = w / w.sum()
+
+    def estimate(self, radius: float = 200.0) -> tuple[np.ndarray, float, float]:
+        """(mode mean, weight share within ``radius`` of it, its 1-sigma spread)."""
+        nearest, _ = self._nearest()
+        est = _pf_estimate(self.p, self.w, nearest, self.refs, radius)
+        m = np.hypot(*(self.p - est).T) <= radius
+        share = float(self.w[m].sum())
+        spread = float(np.sqrt((self.w[m] * ((self.p[m] - est) ** 2).sum(1)).sum() / max(share, 1e-12) / 2))
+        return est, share, spread
+
+    def resample(self) -> None:
+        if 1.0 / np.sum(self.w**2) < self.n / 2:      # systematic resampling
+            c = np.cumsum(self.w)
+            u = (self.rng.random() + np.arange(self.n)) / self.n
+            self.p = self.p[np.minimum(np.searchsorted(c, u), self.n - 1)]
+            self.w = np.full(self.n, 1.0 / self.n)
+
+
+def _pf(case: Case, rng: np.random.Generator, kidnapped: bool, **kw) -> np.ndarray:
+    f = ParticleFilter(case.refs, case.tile_stride_m, rng, None if kidnapped else case.start, **kw)
     out = []
     for k in range(len(case.sims)):
         if k > 0:
-            p = p + case.vo[k - 1] + rng.normal(0, max(case.vo_sigma[k - 1], 5.0), (n, 2))
-            n_rec = int(recover * n)
-            if n_rec:
-                idx = rng.choice(n, n_rec, replace=False)
-                p[idx] = rng.uniform(lo, hi, (n_rec, 2))
-        z = _zscores(case.sims[k])
-        d2 = ((p[:, None, :] - case.refs[None]) ** 2).sum(-1)
-        nearest = d2.argmin(1)
-        zp = np.where(d2[np.arange(n), nearest] <= cover**2, z[nearest], z.min())
-        logw = np.log(w + 1e-300) + beta * zp
-        w = np.exp(logw - logw.max())
-        w /= w.sum()
-        out.append(_pf_estimate(p, w, nearest, case.refs))
-        if 1.0 / np.sum(w**2) < n / 2:              # systematic resampling
-            c = np.cumsum(w)
-            u = (rng.random() + np.arange(n)) / n
-            p = p[np.minimum(np.searchsorted(c, u), n - 1)]
-            w = np.full(n, 1.0 / n)
+            f.predict(case.vo[k - 1], case.vo_sigma[k - 1])
+        if case.fix(k):
+            f.update(case.sims[k])
+        out.append(f.estimate()[0])
+        f.resample()
     return np.array(out)
 
 
@@ -353,6 +411,62 @@ def pf_kidnapped(case: Case, rng: np.random.Generator) -> np.ndarray:
     return _pf(case, rng, kidnapped=True)
 
 
+def hybrid(case: Case, rng: np.random.Generator, sigma_avl: float = 50.0, k_sigma: float = 3.0,
+           r_min: float = 150.0, support_on: float = 0.6, seed_floor_m: float = 25.0,
+           output: str = "pf") -> np.ndarray:
+    """Particle filter (global) with a gated, windowed KF (local) as the fallback.
+
+    * Global: the particle filter runs on the full similarity map. While at least
+      ``support_on`` of its weight sits in one mode, that mode is the output and
+      the KF is re-seeded on it (``output="pf"``, the default).
+    * Local: between confident PF frames, the VO-propagated KF carries the
+      estimate; AVL searches only tiles within ``k_sigma`` of its prediction and
+      the fix is chi-square gated. This is what removes the PF's rare km-scale
+      failures (a confidently wrong or scattered PF is not followed).
+    * ``output="kf"``: the KF is always the output and is re-seeded only when a
+      confident PF falls outside its gate. Measured worse with real VO
+      (within 100 m 76 % vs 84 %; docs/VO_AVL_Fusion_Experiment.md).
+    """
+    pfl = ParticleFilter(case.refs, case.tile_stride_m, rng, case.start)
+    x = case.start.astype(float).copy()
+    P = np.eye(2) * 10.0**2
+    R = np.eye(2) * sigma_avl**2
+    out = [x.copy()]
+    pfl.update(case.sims[0]) if case.fix(0) else None
+    pfl.resample()
+    for k in range(1, len(case.sims)):
+        pfl.predict(case.vo[k - 1], case.vo_sigma[k - 1])
+        x = x + case.vo[k - 1]
+        P = P + np.eye(2) * case.vo_sigma[k - 1] ** 2
+        if case.fix(k):
+            s = case.sims[k]
+            pfl.update(s)
+            S = P + R
+            radius = max(r_min, k_sigma * np.sqrt(np.trace(S) / 2))
+            dist = np.hypot(*(case.refs - x).T)
+            inside = dist <= radius
+            if not inside.any():
+                inside[np.argmin(dist)] = True
+            r = case.refs[np.where(inside)[0][np.argmax(s[inside])]] - x
+            Si = np.linalg.inv(S)
+            if r @ Si @ r <= CHI2_2D_99:
+                K = P @ Si
+                x = x + K @ r
+                P = (np.eye(2) - K) @ P
+            est, share, spread = pfl.estimate()
+            if share >= support_on:
+                d = est - x
+                C = P + np.eye(2) * spread**2
+                if output == "pf":                    # confident PF is the answer
+                    x, P = est.copy(), np.eye(2) * (spread**2 + seed_floor_m**2)
+                elif d @ np.linalg.inv(C) @ d > CHI2_2D_99:
+                    x = est.copy()
+                    P = np.eye(2) * (spread**2 + seed_floor_m**2)
+        pfl.resample()
+        out.append(x.copy())
+    return np.array(out)
+
+
 # ── sliding-window robust pose graph ───────────────────────────────────────────
 def pgo(case: Case, rng=None, window: int = 15, c_avl: float = 50.0, sigma_avl: float = 50.0,
         sigma_anchor: float = 30.0, iters: int = 10) -> np.ndarray:
@@ -372,9 +486,9 @@ def pgo(case: Case, rng=None, window: int = 15, c_avl: float = 50.0, sigma_avl: 
             rows.append(e); rhs.append(est[a] if a < k else x[0]); wts.append(1 / anchor_sigma**2)
             for j in range(1, W):
                 e = np.zeros(W); e[j] = 1.0; e[j - 1] = -1.0
-                rows.append(e); rhs.append(case.vo[idx[j] - 1]); wts.append(1 / case.vo_sigma[idx[j] - 1] ** 2)
+                rows.append(e); rhs.append(case.vo[idx[j] - 1]); wts.append(1 / max(case.vo_sigma[idx[j] - 1], 1.0) ** 2)
             for j in range(W):
-                if idx[j] == 0:
+                if idx[j] == 0 or not case.fix(idx[j]):
                     continue
                 r = np.linalg.norm(top1[idx[j]] - x[j])
                 e = np.zeros(W); e[j] = 1.0
@@ -436,4 +550,8 @@ METHODS: dict[str, Callable[[Case, np.random.Generator], np.ndarray]] = {
     "pgo": pgo,
     "align": align,
     "pf_kidnapped": pf_kidnapped,
+    "hybrid": hybrid,
 }
+
+#: the methods that fuse odometry with AVL and can run in the trajectory app
+FRAME_FILTERS = ("kf", "kf_reanchor", "kf_window", "pf", "pgo", "hybrid")

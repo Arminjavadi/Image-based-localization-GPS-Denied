@@ -144,61 +144,110 @@ It takes about 0.5 s per frame on this CPU. Results: `artifacts/visloc/vo_real/`
 |---|---|---|---|---|
 | r05 | 142/143 | 12 % (7 m) | 0.95 | 4° |
 | r06 | 133/143 | 20 % (frames ≤ 91), 57 % in the take-off tail | 1.07 | 6° |
-| r10 | 143/143 | 34 % (21 m) | **1.23** | 9° |
+| r10 | 143/143 | 34 % → **26 %** with corrected k (see below) | 1.21 at the old k | 9° |
 | r11 | 141/143 | 7 % (19 m) | 0.97 | 2° |
 
 The ground-truth GPS has its own noise of a few metres on 60 m steps, so part of these errors
-is in the reference, not the VO. r10's 1.23 length ratio means its camera constant is wrong.
-VO implies k ≈ 1.45, which agrees with the 1.48 from the MegaLoc scale scan; the recipe uses
-1.197. Even with k = 1.45, r10's VO error only drops to 23 %: the direction scatter remains,
-maybe because that camera sits on a stabilised gimbal (tilt correction does not help there).
+is in the reference, not the VO.
+
+**r10's camera constant was wrong, and VO settles it.** The VO ground step scales *with* k
+(metres per pixel = k · AGL / width). At the recipe's k = 1.197, r10's VO steps came out 1.21×
+the GPS steps, so k ≈ 1.197 / 1.21 = **0.988**. That is close to r05's 0.971, so the two
+3000 px regions look like one lens. The old patch-size scan had left r10 unresolved
+(MegaLoc 1.48 vs DenseUAV-ViT 1.20). The pipeline now uses 0.988 (`avl/pipeline.py`).
+
+- **Retrieval is unchanged.** The altitude gate already left every r10 frame uncropped at
+  1.197, and a smaller k only shrinks the footprint further.
+- **The larger value is ruled out:** measured with the MegaLoc recipe (top-1 within 100 m),
+  k = 1.45 drops r10 from 37.5 % to 29.9 % (the gate crops 91 % of frames). A 290 m map sized
+  for k = 1.45 scores 31.2 %. The planner's tile size at k = 0.988 (~194 m) matches the 200 m
+  map that scores best.
+- With k = 0.988, r10's VO step error falls from 34 % to 26 %. The 9° direction scatter remains,
+  possibly a stabilised gimbal, since tilt correction does not help on r10.
 
 ### Fusion with the real VO
 
 Within 100 m (%), nominal scenario, 5 seeds. Failed VO steps coast on the simulated IMU; the
-filters assume VO 1σ = 20 % of the step + 10 m for every region:
+filters assume VO 1σ = 20 % of the step + 10 m for every region. `hybrid` is defined in the
+next section.
 
-| Setting | AVL | kf | kf_reanchor | kf_window | **pf** | pgo |
-|---|---|---|---|---|---|---|
-| r10 DenseUAV | 19 | 19 | 29 | 46 | **50** | 17 |
-| r06 DenseUAV | 28 | 48 | 48 | 25 | **60** | 58 |
-| r10 MegaLoc | 37 | 33 | 66 | **67** | 63 | 43 |
-| r06 MegaLoc | 43 | 21 | 51 | 53 | **63** | 46 |
-| r10 MegaLoc+AnyLoc-L | 48 | 61 | 61 | **75** | 67 | 54 |
-| r06 MegaLoc+Game4Loc | 48 | 45 | 56 | 57 | **60** | **60** |
-| r05 AnyLoc-L | 50 | 91 | 91 | 69 | **100** | 95 |
-| r11 MegaLoc (AGL) | 66 | 73 | **85** | 80 | 81 | 77 |
-| r05 MegaLoc | 74 | 94 | 94 | 90 | **100** | 96 |
-| r05 ensemble | 83 | 99 | 96 | 94 | **100** | 99 |
-| **Mean** | 49 | 58 | 68 | 66 | **74** | 65 |
+| Setting | AVL | kf | kf_reanchor | kf_window | pf | pgo | **hybrid** |
+|---|---|---|---|---|---|---|---|
+| r10 DenseUAV | 19 | 62 | 62 | 60 | 87 | 50 | **87** |
+| r06 DenseUAV | 28 | 48 | 48 | 25 | 60 | 58 | **60** |
+| r10 MegaLoc | 37 | 19 | 69 | 74 | 94 | 71 | **94** |
+| r06 MegaLoc | 43 | 21 | 51 | 53 | 63 | 46 | **62** |
+| r10 MegaLoc+AnyLoc-L | 48 | 86 | 83 | 82 | 95 | 83 | **95** |
+| r06 MegaLoc+Game4Loc | 48 | 45 | 56 | 57 | 60 | 60 | **60** |
+| r05 AnyLoc-L | 50 | 91 | 91 | 69 | 100 | 95 | **100** |
+| r11 MegaLoc (AGL) | 66 | 73 | 85 | 80 | 81 | 77 | **80** |
+| r05 MegaLoc | 74 | 94 | 94 | 90 | 100 | 96 | **100** |
+| r05 ensemble | 83 | 99 | 96 | 94 | 100 | 99 | **100** |
+| **Mean** | **49** | 64 | 73 | 68 | 84 | 74 | **84** |
 
-Mean over settings:
-- AVL outage: AVL 36 % → pf 61 %.
-- Both outage: 36 % → pf 57 %.
-- Median error, nominal: 180 m → 58 m (pf).
+Mean over the 10 settings:
 
-Overall, real sparse VO lands where the simulated "poor VO ~8 %" level did (pf 74 % vs 74 %).
-That average hides a split by region:
-- **Where VO is good** (r05 at 12 %, r11 at 7 %), fusion is excellent. On r05, all three encoders
-  reach 100 %, including AnyLoc-L at 50 % alone.
-- **Where VO is weak** (r10: wrong k plus direction scatter) or the flight leaves usable
-  terrain (r06 take-off tail), the gain is about half as large, but still +15 to +30 points.
+| Scenario | AVL | kf_reanchor | pf | pgo | **hybrid** |
+|---|---|---|---|---|---|
+| nominal: within 100 m / median / p95 | 49 % / 180 m / 1356 m | 73 % / 72 m / 401 m | 84 % / 47 m / **5305 m** | 74 % / 69 m / 478 m | **84 % / 47 m / 530 m** |
+| AVL outage: within 100 m / median | 36 % / 322 m | 60 % / 157 m | 70 % / 63 m | 56 % / 158 m | **69 % / 67 m** |
+| both outage: within 100 m / median | 36 % / 322 m | 51 % / 181 m | 64 % / 95 m | 41 % / 300 m | **62 % / 97 m** |
+
+How the gains split:
+- **Good VO** (r05 at 12 %, r11 at 7 %): all r05 encoders reach 100 %, including AnyLoc-L at
+  50 % alone.
+- **r10 after the k fix:** even the weakest encoder (DenseUAV, 19 %) reaches 87 %.
+- **r06:** gains are smallest (+12 to +32 points). Its take-off tail has no usable AVL.
+
+## Hybrid filter and the app (added the same day)
+
+The plain particle filter is the most accurate, but it occasionally fails by kilometres. Its
+mean p95 is 5.3 km, from r06 MegaLoc / MegaLoc+Game4Loc, where it reaches 24 km. That is
+not acceptable on a vehicle.
+
+`hybrid` (in `avl/nav/vo_fusion.py`) keeps the particle filter as the global layer. Its mode is
+the output while it is confident (≥ 60 % of the weight within 200 m of the mode), and a gated
+Kalman filter with a search window carries the estimate when it is not. The result keeps the
+PF's accuracy (84 % within 100 m, median 47 m) and cuts the mean p95 from 5.3 km to 530 m.
+
+An alternative was tested and rejected: making the Kalman filter the output and only
+re-seeding it from a confident, disagreeing PF scored 76 % / 54 m / 573 m with real VO.
+
+With simulated continuous VIO (~3 %), hybrid and pf tie at 88 % within 100 m. When both sensors
+fail, hybrid keeps 65 % where the pose graph falls to 44 %.
+
+**In the app.** `scripts/visloc_traj.py --filter hybrid` (also `pf`, `kf_reanchor`,
+`kf_window`, `pgo`) runs real visual odometry on the trajectory frames (`measure_track`) and
+fuses it with the full per-tile similarity map. The Benchmark Console's Trajectory tab offers
+these filters next to the IMU EKF; Studio stays on the EKF, because a drawn route has no images.
+
+End to end on r10 with DenseUAV-ViT (AVL alone: median 405 m, 19 % within 100 m):
+
+| Filter | Result |
+|---|---|
+| IMU EKF | diverges by kilometres (141 of 143 fixes gated) |
+| hybrid | **88 % within 100 m, median 57 m, max 165 m** |
+
+Compute: the filter costs ~60 ms per frame on this CPU. VO costs 0.5–1.3 s per frame
+(SIFT at 1200 px, CPU); on a Jetson it should use GPU features.
 
 ## Recommendation
 
 - Run **VIO continuously** on board, at camera rate, and not only on AVL frames.
-- Use a **particle filter as the global layer**: it handles relocalization, AVL outages and the
-  case with no known start. Use a **KF/ESKF or pose graph as the local layer** when the PF has
-  converged to one mode, for low tail error. Fall back to pure VIO/IMU propagation, with growing
-  covariance, when the PF's mode support is weak (sustained AVL outage, as in r06).
-- Keep **reanchor** in any KF that runs alone.
+- Use the **hybrid filter**: the particle filter as the global layer, for relocalization, AVL
+  outages and no known start; a gated Kalman filter as the fallback when the PF is not
+  confident; pure VIO/IMU propagation with growing covariance during sustained AVL outages
+  (as in r06).
+- Get **k from the lens datasheet**. A wrong k shows up directly as a VO scale error, and VO
+  over a few hundred metres of known ground is a cheap way to check it.
 
 ## Caveats
 
-- VO is simulated. The levels are assumptions; real sparse VO on UAV-VisLoc frames (homography
-  plus height) is the next thing to measure.
-- The PF temperature (β = 0.5, flat between 0.3 and 0.7) and the reanchor thresholds were
-  picked on 4 of the 10 settings, so there is mild tuning leakage.
-- The outage blocks are synthetic, apart from the real r06 tail. Only 144 frames per region
-  were used. r11's frames are not contiguous (half the images are missing on disk), which is
-  why its sparse-VO rows are weak.
+- The VO is real, but the IMU coast across failed VO steps is simulated, and so are the outage
+  blocks (apart from the real r06 tail).
+- The PF temperature (β = 0.5, flat between 0.3 and 0.7), the reanchor thresholds and the
+  hybrid's output mode were chosen on these same regions, so there is some tuning leakage.
+- Only 144 frames per region were used. r11's frames are not contiguous (half the images are
+  missing on disk).
+- The AGL for VO scale uses the DEM at the GPS position. On a vehicle it would use the
+  estimated position, which matters little at these altitudes.
