@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-7b2760ba-7c67-435e-91a4-5b89e7e09318/styles.css">
+<script src="_ds/nocturne-7b2760ba-7c67-435e-91a4-5b89e7e09318/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:#161826;color:#e9e9ed;font-family:Inter,system-ui,sans-serif}
+a{color:#9184d9}a:hover{color:#b5abfc}
+@keyframes noc-pulse{0%,100%{opacity:.35}50%{opacity:1}}
+select.input,input.input{background:rgba(22,24,38,.5)!important;backdrop-filter:blur(8px)}
+select.input{appearance:none}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:rgba(233,233,237,.14);border-radius:9px}::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;font-size:14px;background:radial-gradient(1100px 620px at 10% -10%, rgba(145,132,217,.20), transparent 68%), radial-gradient(900px 560px at 92% 2%, rgba(38,42,96,.62), transparent 70%), radial-gradient(700px 500px at 60% 108%, rgba(66,58,106,.30), transparent 72%), #161826">
+
+  <header style="display:flex;align-items:center;gap:16px;padding:11px 20px;border-bottom:1px solid rgba(233,233,237,.07);background:linear-gradient(rgba(233,233,237,.045),rgba(233,233,237,.012));backdrop-filter:blur(26px) saturate(1.5);position:sticky;top:0;z-index:20">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-right:auto;min-width:0">
+      <span style="font-weight:500;font-size:17px;letter-spacing:-.015em;white-space:nowrap">Model Benchmark Console</span>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:rgba(233,233,237,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">visual place recognition · GPS-denied UAV localization</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:rgba(233,233,237,.35)">
+      <span style="letter-spacing:.09em;text-transform:uppercase">mock</span>
+      <div style="display:inline-flex;border:1px solid rgba(233,233,237,.12);border-radius:8px;overflow:hidden;background:rgba(22,24,38,.4)">
+        <button onClick="{{ setData }}" style="{{ dataBtn }}">Populated</button>
+        <button onClick="{{ setEmpty }}" style="{{ emptyBtn }}">First run</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 13px 5px 10px;border-radius:999px;border:1px solid {{ statusBorder }};background:{{ statusBg }};backdrop-filter:blur(12px)">
+      <span style="width:7px;height:7px;border-radius:50%;background:{{ statusDot }};animation:{{ statusAnim }};display:block"></span>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;letter-spacing:.03em;color:{{ statusDot }};white-space:nowrap">{{ statusText }}</span>
+    </div>
+  </header>
+
+  <div style="flex:1;display:flex;align-items:stretch;min-height:0">
+
+    <!-- ── left control panel ── -->
+    <aside style="width:380px;flex:none;display:flex;flex-direction:column;gap:15px;padding:16px;overflow-y:auto;border-right:1px solid rgba(233,233,237,.07);background:linear-gradient(rgba(233,233,237,.05),rgba(233,233,237,.015));backdrop-filter:blur(28px) saturate(1.4)">
+
+      <section style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <h6 style="margin:0;font-size:10.5px;color:rgba(233,233,237,.48)">1 · Search space</h6>
+          <span style="height:1px;flex:1;background:linear-gradient(to right,rgba(233,233,237,.16),transparent);display:block"></span>
+        </div>
+
+        <div class="field">
+          <label style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">Reference database<span style="font-size:10px;color:rgba(233,233,237,.34)">the searchable map</span></label>
+          <select class="input" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">
+            <option>data/visloc_avl/r10_t200/references.csv</option>
+            <option>data/visloc_avl/r10_t100/references.csv</option>
+            <option>data/visloc_avl/r10_t600/references.csv</option>
+            <option>data/denseuav_avl/references_gallery_satellite.csv</option>
+          </select>
+          <div style="display:flex;gap:7px;align-items:center;margin-top:6px">
+            <button class="btn btn-secondary" style="font-size:12px;padding:4px 9px">Browse CSV…</button>
+            <button class="btn btn-ghost" style="font-size:12px">Rescan</button>
+            <span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:rgba(233,233,237,.42)">812 tiles · 200 m</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">Query set<span style="font-size:10px;color:rgba(233,233,237,.34)">what we localize</span></label>
+          <select class="input" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">
+            <option>data/visloc_avl/r10_t200/queries.csv</option>
+            <option>data/visloc_avl/r06_t200/queries.csv</option>
+            <option>data/denseuav_avl/queries_test_drone.csv</option>
+          </select>
+          <div style="display:flex;gap:9px;align-items:center;margin-top:6px;flex-wrap:wrap">
+            <button class="btn btn-secondary" style="font-size:12px;padding:4px 9px">Browse CSV…</button>
+            <label class="radio" style="font-size:11.5px;color:rgba(233,233,237,.65)"><input type="checkbox" defaultChecked="{{ true }}" /><span class="dot" style="width:13px;height:13px"></span>Pair with reference folder</label>
+          </div>
+        </div>
+
+        <p style="margin:0;font-size:11.5px;line-height:1.45;color:rgba(233,233,237,.4)">All four selectors are independent — any encoder, against any map, with any query set, including cross-dataset pairs.</p>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <h6 style="margin:0;font-size:10.5px;color:rgba(233,233,237,.48)">2 · Encoders</h6>
+          <span style="height:1px;flex:1;background:linear-gradient(to right,rgba(233,233,237,.16),transparent);display:block"></span>
+        </div>
+
+        <div style="padding:11px;border-radius:9px;background:linear-gradient(rgba(145,132,217,.14),rgba(145,132,217,.05));border:1px solid rgba(145,132,217,.3);backdrop-filter:blur(10px);box-shadow:0 6px 20px rgba(66,58,106,.28)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
+            <span style="font-size:12px;color:rgba(233,233,237,.78)">Active encoder</span>
+            <span class="tag tag-outline" style="font-size:9.5px;padding:2px 7px">feeds Localize</span>
+          </div>
+          <select class="input" value="{{ active }}" onChange="{{ onActive }}" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">
+            <option value="denseuav-vit">DenseUAV ViT</option>
+            <option value="game4loc">Game4Loc</option>
+            <option value="anyloc-lite">AnyLoc-lite</option>
+            <option value="dinov2">DINOv2</option>
+            <option value="mixvpr">MixVPR</option>
+            <option value="cosplace">CosPlace</option>
+          </select>
+          <p style="margin:6px 0 0;font-size:11px;line-height:1.4;color:rgba(233,233,237,.55)">{{ activeBlurb }}</p>
+        </div>
+
+        <div style="padding:11px;border-radius:9px;background:linear-gradient(rgba(233,233,237,.055),rgba(233,233,237,.015));border:1px solid rgba(233,233,237,.1);backdrop-filter:blur(10px)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:7px">
+            <span style="font-size:12px;color:rgba(233,233,237,.78)">Encoders to benchmark</span>
+            <span class="tag tag-neutral" style="font-size:9.5px;padding:2px 7px">feeds Comparison</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ encoders }}" as="enc" hint-placeholder-count="6">
+              <label style="display:flex;gap:9px;align-items:flex-start;padding:5px 6px;border-radius:6px;cursor:pointer;background:{{ enc.bg }}">
+                <input type="checkbox" checked="{{ enc.on }}" onChange="{{ enc.toggle }}" style="margin:3px 0 0;accent-color:#9184d9;width:13px;height:13px;flex:none" />
+                <span style="display:flex;flex-direction:column;gap:1px;min-width:0">
+                  <span style="font-size:12.5px;color:{{ enc.labelColor }}">{{ enc.label }}</span>
+                  <span style="font-size:10.5px;line-height:1.35;color:rgba(233,233,237,.38)">{{ enc.note }}</span>
+                </span>
+              </label>
+            </sc-for>
+          </div>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <h6 style="margin:0;font-size:10.5px;color:rgba(233,233,237,.48)">3 · Protocol</h6>
+          <span style="height:1px;flex:1;background:linear-gradient(to right,rgba(233,233,237,.16),transparent);display:block"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+          <div class="field"><label>Query rotations</label><select class="input" style="font-size:12.5px"><option>4 (heading unknown)</option><option>1 (heading known)</option></select></div>
+          <div class="field"><label>Query crop</label><select class="input" style="font-size:12.5px"><option>square</option><option>none</option></select></div>
+          <div class="field"><label>Max queries</label><input class="input" type="number" defaultValue="144" style="font-family:ui-monospace,Menlo,monospace" /></div>
+          <div class="field"><label>Query stride</label><input class="input" type="number" defaultValue="1" style="font-family:ui-monospace,Menlo,monospace" /></div>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:8px;margin-top:auto;padding-top:14px">
+        <span style="height:1px;background:linear-gradient(to right,transparent,rgba(233,233,237,.18),transparent);display:block"></span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onClick="{{ startRun }}" disabled="{{ running }}" style="flex:1;background:rgba(145,132,217,.1);box-shadow:0 8px 24px rgba(145,132,217,.18)">Run benchmark</button>
+          <button class="btn btn-secondary" onClick="{{ stopRun }}" disabled="{{ notRunning }}">Stop</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-ghost" onClick="{{ setData }}" style="font-size:12px">Reload saved results</button>
+          <span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:rgba(233,233,237,.35)">{{ queueLine }}</span>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ── workspace ── -->
+    <main style="flex:1;min-width:0;display:flex;flex-direction:column">
+
+      <nav style="display:flex;align-items:stretch;gap:3px;padding:0 20px;border-bottom:1px solid rgba(233,233,237,.07);background:linear-gradient(rgba(233,233,237,.03),transparent);backdrop-filter:blur(14px)">
+        <button onClick="{{ toComparison }}" style="{{ tabCmp }}">Comparison</button>
+        <button onClick="{{ toLocalize }}" style="{{ tabLoc }}">Localize</button>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:14px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:rgba(233,233,237,.38);flex-wrap:wrap">
+          <span>r10_t200</span><span>812 tiles</span><span>144 queries</span><span>rot 4 · square</span>
+        </div>
+      </nav>
+
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:18px 20px 22px">
+
+        <!-- Comparison -->
+        <sc-if value="{{ isCmp }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:16px">
+
+            <sc-if value="{{ hasRuns }}" hint-placeholder-val="{{ true }}">
+              <div style="border-radius:11px;border:1px solid rgba(233,233,237,.1);background:linear-gradient(rgba(233,233,237,.055),rgba(233,233,237,.012));backdrop-filter:blur(24px) saturate(1.3);box-shadow:0 14px 40px rgba(0,0,0,.34);overflow:hidden">
+                <div style="display:flex;align-items:baseline;gap:10px;padding:13px 15px 9px;flex-wrap:wrap">
+                  <h4 style="margin:0;font-size:15px">Localization by encoder</h4>
+                  <span style="font-size:11.5px;color:rgba(233,233,237,.45)">headline metric: recall of the rank-1 tile <span style="color:#e9e9ed">within 100 m</span></span>
+                </div>
+                <div style="overflow-x:auto">
+                  <table class="table" style="font-size:12.5px;min-width:1010px">
+                    <thead><tr>
+                      <th style="padding-left:15px">Run</th>
+                      <th style="text-align:right">Tiles</th>
+                      <th style="text-align:right">Queries</th>
+                      <th style="text-align:right">Top-1 median</th>
+                      <th style="text-align:right">Top-1 p95</th>
+                      <th style="text-align:right">&lt;50 m</th>
+                      <th style="text-align:center;color:rgba(233,233,237,.9)">&lt;100 m</th>
+                      <th style="text-align:right">Top-5 &lt;100 m</th>
+                      <th style="text-align:right">Chance</th>
+                      <th style="text-align:right">ms/q</th>
+                      <th style="text-align:center;padding-right:15px">Recall curve</th>
+                    </tr></thead>
+                    <tbody>
+                      <sc-for list="{{ runs }}" as="r" hint-placeholder-count="4">
+                        <tr onClick="{{ r.pick }}" style="cursor:pointer;background:{{ r.rowBg }}">
+                          <td style="padding-left:15px;font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap;color:{{ r.tagColor }}">{{ r.tag }}</td>
+                          <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ r.nRefs }}</td>
+                          <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ r.nQueries }}</td>
+                          <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ r.medianTxt }}</td>
+                          <td style="text-align:right;font-family:ui-monospace,Menlo,monospace;color:rgba(233,233,237,.5)">{{ r.p95Txt }}</td>
+                          <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ r.r50 }}</td>
+                          <td style="text-align:center;min-width:126px">
+                            <span style="display:flex;flex-direction:column;align-items:center;gap:4px">
+                              <span style="font-family:ui-monospace,Menlo,monospace;font-size:20px;font-weight:600;letter-spacing:-.02em;line-height:1;color:{{ r.headColor }}">{{ r.r100 }}</span>
+                              <span style="width:92px;height:3px;border-radius:2px;background:rgba(233,233,237,.1);overflow:hidden;display:block"><span style="display:block;height:3px;border-radius:2px;width:{{ r.headBar }};background:{{ r.headColor }}"></span></span>
+                            </span>
+                          </td>
+                          <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ r.k100 }}</td>
+                          <td style="text-align:right;font-family:ui-monospace,Menlo,monospace;color:rgba(233,233,237,.34)">{{ r.chance }}</td>
+                          <td style="text-align:right;font-family:ui-monospace,Menlo,monospace;color:rgba(233,233,237,.5)">{{ r.ms }}</td>
+                          <td style="padding-right:15px">
+                            <svg viewBox="0 0 104 30" width="104" height="30" style="display:block;margin:0 auto">
+                              <line x1="0" y1="27" x2="104" y2="27" stroke="rgba(233,233,237,.12)"></line>
+                              <line x1="0" y1="3" x2="104" y2="3" stroke="rgba(233,233,237,.06)" stroke-dasharray="2 3"></line>
+                              <polyline points="{{ r.chanceCurve }}" fill="none" stroke="rgba(233,233,237,.22)" stroke-width="1" stroke-dasharray="2 2"></polyline>
+                              <polyline points="{{ r.curve }}" fill="none" stroke="{{ r.headColor }}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"></polyline>
+                            </svg>
+                          </td>
+                        </tr>
+                      </sc-for>
+                    </tbody>
+                  </table>
+                </div>
+                <div style="display:flex;gap:20px;padding:9px 15px 13px;font-size:10.5px;color:rgba(233,233,237,.34);font-family:ui-monospace,Menlo,monospace;flex-wrap:wrap">
+                  <span>curve x: 25 → 1000 m (log) · y: 0 → 100 %</span><span>dashed = chance baseline</span><span>click a row to open it in Localize</span>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ noRuns }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;align-items:flex-start;gap:11px;padding:58px 42px;border-radius:11px;border:1px dashed rgba(233,233,237,.16);background:linear-gradient(rgba(233,233,237,.04),transparent);backdrop-filter:blur(18px)">
+                <span class="tag tag-neutral" style="font-size:10px">artifacts/visloc/ is empty</span>
+                <h3 style="margin:2px 0 0;font-size:23px">No runs yet</h3>
+                <p style="margin:0;max-width:54ch;font-size:13px;line-height:1.55;color:rgba(233,233,237,.55)">Pick a reference database and a query set on the left, tick the encoders you want to compare, then run the benchmark. One row appears per finished run.</p>
+                <button class="btn btn-primary" onClick="{{ startRun }}" style="margin-top:5px">Run benchmark</button>
+              </div>
+            </sc-if>
+
+            <!-- inline log -->
+            <div style="border-radius:11px;border:1px solid rgba(233,233,237,.09);background:rgba(15,16,26,.55);backdrop-filter:blur(20px);overflow:hidden">
+              <div style="display:flex;align-items:center;gap:11px;padding:9px 15px;border-bottom:1px solid rgba(233,233,237,.07);flex-wrap:wrap">
+                <span style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:rgba(233,233,237,.48)">Subprocess log</span>
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:rgba(233,233,237,.4)">{{ logSummary }}</span>
+                <span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:rgba(233,233,237,.3)">only one subprocess runs at a time</span>
+              </div>
+              <div ref="{{ logRef }}" style="height:190px;overflow-y:auto;padding:9px 15px 12px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.65">
+                <sc-for list="{{ logLines }}" as="l" hint-placeholder-count="9">
+                  <div style="color:{{ l.color }};white-space:pre-wrap;word-break:break-all">{{ l.text }}</div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- Localize -->
+        <sc-if value="{{ isLoc }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+
+            <div style="width:344px;flex:none;display:flex;flex-direction:column;gap:12px">
+
+              <div style="display:flex;padding:3px;border-radius:9px;border:1px solid rgba(233,233,237,.1);background:rgba(22,24,38,.45);backdrop-filter:blur(12px)">
+                <button onClick="{{ toSet }}" style="{{ segSet }}">From query set</button>
+                <button onClick="{{ toImage }}" style="{{ segImg }}">Any image</button>
+              </div>
+
+              <sc-if value="{{ isSet }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;flex-direction:column;gap:11px">
+                  <div style="padding:11px;border-radius:9px;background:linear-gradient(rgba(145,132,217,.13),rgba(145,132,217,.04));border:1px solid rgba(145,132,217,.26);backdrop-filter:blur(10px)">
+                    <div style="font-size:11.5px;line-height:1.45;color:rgba(233,233,237,.6);margin-bottom:8px">Evaluate <span style="color:#d2cefd;font-family:ui-monospace,Menlo,monospace">{{ active }}</span> against the selected database + query set, using the Protocol box.</div>
+                    <button class="btn btn-primary btn-block" onClick="{{ startInspect }}" disabled="{{ running }}" style="margin-top:0;background:rgba(145,132,217,.09)">Run on selected DB + query set</button>
+                    <label class="radio" style="font-size:11.5px;margin-top:9px;color:rgba(233,233,237,.62)"><input type="checkbox" /><span class="dot" style="width:13px;height:13px"></span>force re-run</label>
+                  </div>
+                  <div class="field">
+                    <label>Run</label>
+                    <select class="input" value="{{ runTag }}" onChange="{{ onRun }}" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">
+                      <sc-for list="{{ runOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.tag }}">{{ o.tag }}</option></sc-for>
+                    </select>
+                  </div>
+                  <div style="border-radius:9px;border:1px solid rgba(233,233,237,.1);background:linear-gradient(rgba(233,233,237,.05),rgba(233,233,237,.012));backdrop-filter:blur(18px);overflow:hidden">
+                    <div style="display:flex;justify-content:space-between;padding:9px 12px 5px;font-size:10.5px;color:rgba(233,233,237,.45)"><span style="letter-spacing:.09em;text-transform:uppercase">Evaluated queries</span><span style="font-family:ui-monospace,Menlo,monospace">{{ nQ }}</span></div>
+                    <div style="max-height:430px;overflow-y:auto">
+                      <table class="table" style="font-size:12px">
+                        <thead><tr><th style="padding-left:12px">Query</th><th style="text-align:right">Top-1 err</th><th style="text-align:right">Best top-5</th><th style="text-align:right;padding-right:12px">Score</th></tr></thead>
+                        <tbody>
+                          <sc-for list="{{ queryRows }}" as="q" hint-placeholder-count="10">
+                            <tr onClick="{{ q.pick }}" style="cursor:pointer;background:{{ q.rowBg }}">
+                              <td style="padding-left:12px;font-family:ui-monospace,Menlo,monospace;color:{{ q.idColor }}">{{ q.id }}</td>
+                              <td style="text-align:right;font-family:ui-monospace,Menlo,monospace;color:{{ q.errColor }}">{{ q.top1 }}</td>
+                              <td style="text-align:right;font-family:ui-monospace,Menlo,monospace;color:rgba(233,233,237,.55)">{{ q.best }}</td>
+                              <td style="text-align:right;padding-right:12px;font-family:ui-monospace,Menlo,monospace;color:rgba(233,233,237,.55)">{{ q.score }}</td>
+                            </tr>
+                          </sc-for>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isImg }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:11px;padding:12px;border-radius:9px;border:1px solid rgba(233,233,237,.1);background:linear-gradient(rgba(233,233,237,.05),rgba(233,233,237,.012));backdrop-filter:blur(18px)">
+                  <p style="margin:0;font-size:11.5px;line-height:1.45;color:rgba(233,233,237,.5)">For a frame that is not part of any prepared query set — a new drone capture, a screenshot.</p>
+                  <div class="field">
+                    <label>Image</label>
+                    <input class="input" value="{{ srcImg }}" onChange="{{ onImg }}" style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px" />
+                    <button class="btn btn-secondary" style="margin-top:6px;font-size:12px;padding:4px 9px">Browse…  jpg · png · tif</button>
+                  </div>
+                  <div class="field">
+                    <label>Encoder</label>
+                    <div style="min-height:36px;display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;border:1px dashed rgba(233,233,237,.15);background:rgba(22,24,38,.4);font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#d2cefd">{{ active }}<span style="font-family:Inter,sans-serif;font-size:10px;color:rgba(233,233,237,.34);margin-left:auto">mirrors Active encoder</span></div>
+                  </div>
+                  <button class="btn btn-primary btn-block" onClick="{{ startLocalize }}" disabled="{{ running }}" style="background:rgba(145,132,217,.09)">Localize image</button>
+                  <p style="margin:0;font-size:11px;line-height:1.5;color:{{ hintColor }}">{{ hintLine }}</p>
+                </div>
+              </sc-if>
+            </div>
+
+            <!-- retrieval panel -->
+            <section style="flex:1;min-width:520px;display:flex;flex-direction:column;gap:13px;padding:15px;border-radius:12px;border:1px solid rgba(233,233,237,.11);background:linear-gradient(rgba(233,233,237,.06),rgba(233,233,237,.014));backdrop-filter:blur(28px) saturate(1.35);box-shadow:0 18px 46px rgba(0,0,0,.4), inset 0 1px 0 rgba(233,233,237,.06)">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+                <h4 style="margin:0;font-size:15px">Retrieval</h4>
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:rgba(233,233,237,.45)">{{ resTitle }}</span>
+                <span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:rgba(233,233,237,.34)">{{ resMeta }}</span>
+              </div>
+
+              <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+                <figure style="width:300px;flex:none">
+                  <div style="height:200px;border-radius:8px;border:1px solid rgba(233,233,237,.13);background:repeating-linear-gradient(45deg,rgba(233,233,237,.03) 0 8px,transparent 8px 16px),rgba(22,24,38,.5);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:10px;text-align:center">
+                    <span style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:rgba(233,233,237,.3)">query frame</span>
+                    <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:rgba(233,233,237,.55);word-break:break-all">{{ queryFile }}</span>
+                  </div>
+                  <figcaption>Centre-cropped to 1:1, encoded at 0 / 90 / 180 / 270°</figcaption>
+                </figure>
+
+                <figure style="flex:1;min-width:280px">
+                  <div style="position:relative;height:200px;border-radius:8px;border:1px solid rgba(233,233,237,.13);overflow:hidden;background:linear-gradient(rgba(145,132,217,.06),transparent),repeating-linear-gradient(to right,rgba(233,233,237,.05) 0 1px,transparent 1px 34px),repeating-linear-gradient(to bottom,rgba(233,233,237,.05) 0 1px,transparent 1px 34px),rgba(22,24,38,.45)">
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+                      <polyline points="{{ mapLink }}" fill="none" stroke="rgba(126,224,168,.55)" stroke-width="1" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"></polyline>
+                    </svg>
+                    <sc-for list="{{ mapPts }}" as="p" hint-placeholder-count="7">
+                      <div style="position:absolute;left:{{ p.left }};top:{{ p.top }};transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;white-space:nowrap">
+                        <span style="width:{{ p.size }};height:{{ p.size }};border-radius:{{ p.radius }};border:1.5px solid {{ p.color }};background:{{ p.fill }};display:block;box-shadow:0 0 12px {{ p.glow }}"></span>
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:{{ p.color }}">{{ p.label }}</span>
+                      </div>
+                    </sc-for>
+                    <div style="position:absolute;left:10px;bottom:9px;display:flex;flex-direction:column;gap:3px">
+                      <span style="width:64px;height:1px;background:rgba(233,233,237,.45);display:block"></span>
+                      <span style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:rgba(233,233,237,.42)">{{ scaleTxt }}</span>
+                    </div>
+                    <div style="position:absolute;right:9px;top:8px;display:flex;gap:10px;font-family:ui-monospace,Menlo,monospace;font-size:9.5px">
+                      <span style="color:#7ee0a8">◇ truth</span><span style="color:#b5abfc">◎ fused</span><span style="color:rgba(233,233,237,.5)">• tiles</span>
+                    </div>
+                  </div>
+                  <figcaption>Ground truth, fused estimate and the top-5 tiles, plotted from their coordinates</figcaption>
+                </figure>
+              </div>
+
+              <div style="display:grid;grid-template-columns:158px 1fr;gap:6px 14px;padding:12px 13px;border-radius:9px;background:rgba(15,16,26,.42);border:1px solid rgba(233,233,237,.07);backdrop-filter:blur(10px);font-size:12.5px">
+                <span style="color:rgba(233,233,237,.5)">Ground truth</span><span style="font-family:ui-monospace,Menlo,monospace">{{ gtTxt }}</span>
+                <span style="color:rgba(233,233,237,.5)">Fused estimate (top-5)</span><span style="font-family:ui-monospace,Menlo,monospace;color:#d2cefd">{{ fusedTxt }}</span>
+                <span style="color:rgba(233,233,237,.5)">Top-1 tile</span><span style="font-family:ui-monospace,Menlo,monospace">{{ top1Txt }}</span>
+                <span style="color:rgba(233,233,237,.5);align-self:center">Error</span>
+                <div style="display:flex;flex-wrap:wrap;gap:5px 15px;align-items:baseline;font-family:ui-monospace,Menlo,monospace;font-size:12px">
+                  <span style="font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.1;color:{{ errColor }}">{{ errBig }}</span>
+                  <span style="color:rgba(233,233,237,.55)">fused <span style="color:rgba(233,233,237,.85)">{{ fusedErr }}</span></span>
+                  <span style="color:rgba(233,233,237,.55)">best of top-5 <span style="color:rgba(233,233,237,.85)">{{ bestErr }}</span></span>
+                  <span style="color:rgba(233,233,237,.55)">confidence <span style="color:rgba(233,233,237,.85)">{{ conf }}</span></span>
+                  <span style="color:rgba(233,233,237,.55)">spread <span style="color:rgba(233,233,237,.85)">{{ spread }}</span></span>
+                </div>
+              </div>
+
+              <div>
+                <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:8px;flex-wrap:wrap"><span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:rgba(233,233,237,.45)">Retrieved tiles</span><span style="font-size:11px;color:rgba(233,233,237,.3)">rank 1 → 5, one per physical location</span></div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                  <sc-for list="{{ tiles }}" as="t" hint-placeholder-count="5">
+                    <div style="width:114px;display:flex;flex-direction:column;gap:5px">
+                      <div style="height:96px;border-radius:7px;border:1.5px solid {{ t.frame }};background:repeating-linear-gradient(45deg,rgba(233,233,237,.03) 0 7px,transparent 7px 14px),rgba(22,24,38,.5);display:flex;align-items:flex-end;justify-content:space-between;padding:5px 6px;box-shadow:{{ t.shadow }}">
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:rgba(233,233,237,.5)">#{{ t.rank }}</span>
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:{{ t.errColor }}">{{ t.err }}</span>
+                      </div>
+                      <div style="display:flex;flex-direction:column;font-family:ui-monospace,Menlo,monospace;font-size:10px;line-height:1.45;color:rgba(233,233,237,.42)">
+                        <span style="color:rgba(233,233,237,.62)">{{ t.id }}</span>
+                        <span>{{ t.lat }}</span><span>{{ t.lon }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <table class="table" style="font-size:12px">
+                <thead><tr><th style="width:32px">#</th><th>Tile id</th><th style="text-align:right">Latitude</th><th style="text-align:right">Longitude</th><th style="text-align:right">Score</th><th style="text-align:right">Error</th></tr></thead>
+                <tbody>
+                  <sc-for list="{{ tiles }}" as="t" hint-placeholder-count="5">
+                    <tr>
+                      <td style="font-family:ui-monospace,Menlo,monospace;color:rgba(233,233,237,.42)">{{ t.rank }}</td>
+                      <td style="font-family:ui-monospace,Menlo,monospace">{{ t.id }}</td>
+                      <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ t.lat }}</td>
+                      <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ t.lon }}</td>
+                      <td style="text-align:right;font-family:ui-monospace,Menlo,monospace;color:rgba(233,233,237,.62)">{{ t.score }}</td>
+                      <td style="text-align:right;font-family:ui-monospace,Menlo,monospace;color:{{ t.errColor }}">{{ t.err }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </section>
+          </div>
+        </sc-if>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const GOOD = '#7ee0a8', WARN = '#f0c04a', BAD = '#f07a7a';
+const ENC = [
+  ['denseuav-vit', 'DenseUAV ViT', 'UAV↔satellite, 14 Hangzhou campuses (512-d)'],
+  ['game4loc', 'Game4Loc', 'UAV↔satellite, cross-area split, GTA-UAV (768-d)'],
+  ['anyloc-lite', 'AnyLoc-lite', 'DINOv2 + VLAD, vocabulary fitted on the selected map'],
+  ['dinov2', 'DINOv2', 'control: no cross-view training (768-d)'],
+  ['mixvpr', 'MixVPR', 'ground-level VPR baseline (4096-d)'],
+  ['cosplace', 'CosPlace', 'ground-level VPR baseline (2048-d)'],
+];
+const RUNS = [
+  { model: 'denseuav-vit', median: 63, p95: 1180, r: [.11, .34, .62, .79, .90, .95], k: [.19, .52, .78, .89, .96, .98], ms: 190.3 },
+  { model: 'game4loc', median: 71, p95: 1420, r: [.09, .29, .55, .73, .87, .94], k: [.15, .44, .71, .85, .94, .97], ms: 165.1 },
+  { model: 'anyloc-lite', median: 118, p95: 2310, r: [.05, .18, .41, .60, .80, .90], k: [.09, .30, .58, .77, .91, .96], ms: 240.7 },
+  { model: 'dinov2', median: 604, p95: 4870, r: [.01, .05, .12, .24, .47, .68], k: [.02, .09, .21, .38, .63, .82], ms: 205.4 },
+];
+const CHANCE = [.004, .014, .048, .17, .48, .81];
+const DIST = [25, 50, 100, 200, 500, 1000];
+const NQ = 144, NREFS = 812;
+const LOG0 = [
+  '$ python scripts/visloc_eval.py --model denseuav-vit --refs data/visloc_avl/r10_t200/references.csv --queries data/visloc_avl/r10_t200/queries.csv --rotations 4 --query-crop square --max-queries 144',
+  '[12:04:31] encoding 812 reference tiles · 4 rotations',
+  '[12:05:12] reference_encode_s=41.2  dim=512',
+  '[12:05:12] encoding 144 queries',
+  '[12:05:39] query_total_s=27.4  query_ms_per_image=190.3',
+  '[12:05:39] top1_error_m median=63.0 p95=1180.0',
+  '[12:05:39] recall_top1_within_m 50=0.34 100=0.62',
+  '[12:05:39] wrote artifacts/visloc/r10_t200__denseuav-vit_summary.json',
+  '[12:05:39] wrote artifacts/visloc/r10_t200__denseuav-vit_per_query.csv',
+  '[12:05:39] exit 0',
+];
+const pct = v => (v * 100).toFixed(0) + ' %';
+const fmtM = v => v == null ? '—' : (v >= 1000 ? (v / 1000).toFixed(2) + ' km' : Math.round(v) + ' m');
+const curve = arr => arr.map((v, i) => {
+  const x = (Math.log10(DIST[i]) - Math.log10(25)) / (Math.log10(1000) - Math.log10(25)) * 104;
+  return x.toFixed(1) + ',' + (27 - v * 24).toFixed(1);
+}).join(' ');
+const label = id => (ENC.find(e => e[0] === id) || ['', id, ''])[1];
+
+class Component extends DCLogic {
+  state = {
+    tab: 'comparison', mode: 'set', mock: 'data', active: 'denseuav-vit',
+    runIdx: 0, qIdx: 3, imgResult: false, srcImg: 'data/incoming/frame_0442.JPG',
+    ticked: { 'denseuav-vit': true, game4loc: true, 'anyloc-lite': true, dinov2: true, mixvpr: false, cosplace: false },
+    running: false, runningTag: '', localizing: false, stopped: false, log: LOG0.slice(), queue: 0, extra: [],
+  };
+  componentWillUnmount() { clearInterval(this._t); }
+
+  runList() {
+    const base = this.state.mock === 'empty' ? [] : RUNS;
+    return base.concat(this.state.extra).map(r => Object.assign({}, r, { tag: 'r10_t200__' + r.model }));
+  }
+  // deterministic, self-consistent per-query record
+  rec(i, model) {
+    const seed = (i * 37 + model.length * 13) % 89;
+    const scale = model === 'dinov2' ? 8.2 : model === 'anyloc-lite' ? 2.0 : model === 'mixvpr' ? 5.4 : model === 'cosplace' ? 4.6 : 1;
+    const top1 = Math.round((26 + (seed % 11) * 13 + (seed % 3) * 27) * scale);
+    const gt = { lat: 30.5125 + i * 0.00107, lon: 114.3008 + i * 0.00091 };
+    const s0 = +(0.88 - (seed % 10) * 0.021).toFixed(4);
+    const errs = [top1, top1 * 1.4, top1 * 3.1, top1 * 4.3, top1 * 5.6];
+    const tiles = errs.map((e, k) => {
+      const th = ((37 + k * 73 + seed * 11) % 360) * Math.PI / 180;
+      return {
+        rank: k + 1,
+        id: 'r10_t200_' + String((seed * 17 + k * 131) % 812).padStart(4, '0'),
+        lat: gt.lat + (e * Math.cos(th)) / 111320,
+        lon: gt.lon + (e * Math.sin(th)) / (111320 * Math.cos(gt.lat * Math.PI / 180)),
+        score: +(s0 - k * (0.031 + (seed % 4) * 0.006)).toFixed(4),
+        err: e,
+      };
+    });
+    const wsum = tiles.reduce((a, t) => a + t.score, 0);
+    const fused = {
+      lat: tiles.reduce((a, t) => a + t.lat * t.score, 0) / wsum,
+      lon: tiles.reduce((a, t) => a + t.lon * t.score, 0) / wsum,
+    };
+    const dist = (a, b) => {
+      const k = Math.cos(gt.lat * Math.PI / 180);
+      return Math.hypot((b.lat - a.lat) * 111320, (b.lon - a.lon) * 111320 * k);
+    };
+    const spread = tiles.reduce((a, t) => a + dist(fused, t), 0) / tiles.length;
+    return {
+      id: 'q_' + String(i).padStart(4, '0') + '__10_' + String(13 + i * 3).padStart(4, '0'),
+      file: 'data/UAVVisLoc/10/drone/10_' + String(13 + i * 3).padStart(4, '0') + '.JPG',
+      gt, tiles, fused, spread,
+      fusedErr: dist(gt, fused),
+      top1: tiles[0].err, best: Math.min.apply(null, errs), score: s0,
+      conf: +(s0 * Math.exp(-spread / 500)).toFixed(3),
+    };
+  }
+
+  pushLog(lines) { this.setState(s => ({ log: s.log.concat(lines) })); }
+  simulate(tags, kind) {
+    clearInterval(this._t);
+    const q = tags.slice();
+    const first = q.shift();
+    this.setState({ running: kind !== 'localize', localizing: kind === 'localize', runningTag: first, stopped: false, queue: q.length, log: [] });
+    const script = kind === 'localize'
+      ? ['$ python scripts/visloc_query.py --model ' + this.state.active + ' --image ' + this.state.srcImg + ' --refs data/visloc_avl/r10_t200/references.csv --rotations 4',
+         '[live] encoding query · 4 rotations',
+         '[live] cosine match against 812 reference tiles',
+         '[live] de-duplicated to 5 unique locations',
+         '[live] weighted geo-fusion of top-5',
+         'RESULT_JSON {"fused":{"latitude":30.51298,"longitude":114.30125}, "confidence":0.71}',
+         '[live] exit 0']
+      : ['$ python scripts/visloc_eval.py --model ' + first.split('__')[1] + ' --refs data/visloc_avl/r10_t200/references.csv --queries data/visloc_avl/r10_t200/queries.csv --rotations 4 --query-crop square --max-queries 144',
+         '[run] encoding 812 reference tiles · 4 rotations',
+         '[run] reference_encode_s=39.7',
+         '[run] encoding 144 queries  ' + '·'.repeat(24),
+         '[run] query_ms_per_image=181.2',
+         '[run] top1_error_m median=… p95=…',
+         '[run] wrote artifacts/visloc/' + first + '_summary.json',
+         '[run] exit 0'];
+    let i = 0;
+    this._t = setInterval(() => {
+      if (i < script.length) { this.pushLog([script[i++]]); return; }
+      clearInterval(this._t);
+      if (kind === 'localize') { this.setState({ localizing: false, imgResult: true }); return; }
+      if (q.length) { this.simulate(q, kind); return; }
+      this.setState({ running: false, runningTag: '', queue: 0 });
+    }, 420);
+  }
+
+  renderVals() {
+    const s = this.state, runs = this.runList();
+    const busy = s.running || s.localizing;
+    const runIdx = Math.min(s.runIdx, Math.max(0, runs.length - 1));
+    const model = runs.length ? runs[runIdx].model : s.active;
+    const showImg = s.tab === 'localize' && s.mode === 'image';
+    const rec = showImg
+      ? (s.imgResult || s.mock === 'data' ? this.rec(41, s.active) : null)
+      : (runs.length ? this.rec(s.qIdx, model) : null);
+
+    const tab = on => 'padding:11px 15px 10px;background:transparent;border:0;border-bottom:2px solid ' + (on ? '#9184d9' : 'transparent') + ';cursor:pointer;font:inherit;font-size:13.5px;font-weight:500;color:' + (on ? '#e9e9ed' : 'rgba(233,233,237,.5)');
+    const seg = on => 'flex:1;padding:7px 10px;border:0;border-radius:7px;cursor:pointer;font:inherit;font-size:12.5px;background:' + (on ? 'rgba(145,132,217,.18)' : 'transparent') + ';color:' + (on ? '#d2cefd' : 'rgba(233,233,237,.55)') + ';box-shadow:' + (on ? 'inset 0 0 0 1px rgba(145,132,217,.4)' : 'none');
+    const mBtn = on => 'padding:4px 9px;border:0;cursor:pointer;font:inherit;font-size:10.5px;background:' + (on ? 'rgba(145,132,217,.2)' : 'transparent') + ';color:' + (on ? '#d2cefd' : 'rgba(233,233,237,.45)');
+
+    // status pill
+    let statusText = 'READY', dot = GOOD;
+    if (s.running) { statusText = 'RUNNING ' + s.runningTag; dot = WARN; }
+    else if (s.localizing) { statusText = 'LOCALIZING ' + s.srcImg.split('/').pop(); dot = WARN; }
+    else if (s.stopped) { statusText = 'STOPPED'; dot = '#b5abfc'; }
+
+    // map points
+    let mapPts = [], mapLink = '', scaleTxt = '—';
+    if (rec) {
+      const pts = [{ k: 'gt', lat: rec.gt.lat, lon: rec.gt.lon, label: 'truth' },
+                   { k: 'fused', lat: rec.fused.lat, lon: rec.fused.lon, label: 'fused' }]
+        .concat(rec.tiles.map(t => ({ k: 'tile', lat: t.lat, lon: t.lon, label: '#' + t.rank })));
+      const lats = pts.map(p => p.lat), lons = pts.map(p => p.lon);
+      const pad = 0.22;
+      const laMin = Math.min.apply(null, lats), laMax = Math.max.apply(null, lats);
+      const loMin = Math.min.apply(null, lons), loMax = Math.max.apply(null, lons);
+      const dLa = (laMax - laMin) || 1e-5, dLo = (loMax - loMin) || 1e-5;
+      const x = p => ((p.lon - loMin + dLo * pad) / (dLo * (1 + 2 * pad))) * 100;
+      const y = p => (1 - (p.lat - laMin + dLa * pad) / (dLa * (1 + 2 * pad))) * 100;
+      mapPts = pts.map(p => ({
+        left: x(p).toFixed(1) + '%', top: y(p).toFixed(1) + '%', label: p.label,
+        size: p.k === 'tile' ? '7px' : '11px',
+        radius: p.k === 'gt' ? '2px' : '50%',
+        color: p.k === 'gt' ? GOOD : p.k === 'fused' ? '#b5abfc' : 'rgba(233,233,237,.55)',
+        fill: p.k === 'gt' ? 'rgba(126,224,168,.25)' : p.k === 'fused' ? 'rgba(181,171,252,.3)' : 'rgba(233,233,237,.12)',
+        glow: p.k === 'gt' ? 'rgba(126,224,168,.5)' : p.k === 'fused' ? 'rgba(181,171,252,.55)' : 'transparent',
+      }));
+      mapLink = [pts[0], pts[1]].map(p => x(p).toFixed(1) + ',' + y(p).toFixed(1)).join(' ');
+      const spanM = dLo * (1 + 2 * pad) * 111320 * Math.cos(rec.gt.lat * Math.PI / 180);
+      scaleTxt = fmtM(spanM * 0.64 * (64 / 64) / 1) === '—' ? '' : fmtM(spanM * (64 / 100) / 2 * 2 / 1 * 0.5 * 2 * 0.5);
+      scaleTxt = fmtM(spanM * 0.64);
+    }
+
+    const q = rec;
+    return {
+      // panels / tabs
+      isCmp: s.tab === 'comparison', isLoc: s.tab === 'localize',
+      isSet: s.mode === 'set', isImg: s.mode === 'image',
+      tabCmp: tab(s.tab === 'comparison'), tabLoc: tab(s.tab === 'localize'),
+      segSet: seg(s.mode === 'set'), segImg: seg(s.mode === 'image'),
+      dataBtn: mBtn(s.mock === 'data'), emptyBtn: mBtn(s.mock === 'empty'),
+      toComparison: () => this.setState({ tab: 'comparison' }),
+      toLocalize: () => this.setState({ tab: 'localize' }),
+      toSet: () => this.setState({ mode: 'set' }),
+      toImage: () => this.setState({ mode: 'image' }),
+      setData: () => this.setState({ mock: 'data' }),
+      setEmpty: () => this.setState({ mock: 'empty', extra: [], imgResult: false, log: [] }),
+
+      // status
+      statusText, statusDot: dot, statusAnim: busy ? 'noc-pulse 1.1s ease-in-out infinite' : 'none',
+      statusBorder: busy ? 'rgba(240,192,74,.4)' : 'rgba(126,224,168,.32)',
+      statusBg: busy ? 'rgba(240,192,74,.1)' : 'rgba(126,224,168,.08)',
+
+      // left panel
+      active: s.active, activeBlurb: (ENC.find(e => e[0] === s.active) || ['', '', ''])[2],
+      onActive: e => this.setState({ active: e.target.value, imgResult: false }),
+      encoders: ENC.map(([id, lab, note]) => ({
+        label: lab, note, on: !!s.ticked[id],
+        labelColor: s.ticked[id] ? '#e9e9ed' : 'rgba(233,233,237,.55)',
+        bg: s.ticked[id] ? 'rgba(145,132,217,.09)' : 'transparent',
+        toggle: () => this.setState(st => ({ ticked: Object.assign({}, st.ticked, { [id]: !st.ticked[id] }) })),
+      })),
+      running: busy, notRunning: !busy,
+      queueLine: s.running ? (s.queue + ' run(s) queued') : (runs.length + ' saved result(s) in artifacts/visloc/'),
+      startRun: () => {
+        const tags = ENC.filter(e => s.ticked[e[0]]).map(e => 'r10_t200__' + e[0]);
+        if (!tags.length) return;
+        if (s.mock === 'empty') this.setState({ mock: 'data' });
+        this.setState({ tab: 'comparison' });
+        this.simulate(tags, 'eval');
+      },
+      startInspect: () => { this.setState({ runIdx: Math.max(0, runs.findIndex(r => r.model === s.active)) }); this.simulate(['r10_t200__' + s.active], 'eval'); },
+      startLocalize: () => this.simulate(['one'], 'localize'),
+      stopRun: () => { clearInterval(this._t); this.setState({ running: false, localizing: false, stopped: true, queue: 0, runningTag: '' }); this.pushLog(['[stop] SIGTERM sent · queue cleared']); },
+
+      // comparison
+      hasRuns: runs.length > 0, noRuns: runs.length === 0,
+      runs: runs.map((r, i) => ({
+        tag: r.tag, nRefs: NREFS, nQueries: NQ,
+        medianTxt: fmtM(r.median), p95Txt: fmtM(r.p95),
+        r50: pct(r.r[1]), r100: pct(r.r[2]), k100: pct(r.k[2]), chance: pct(CHANCE[2]),
+        ms: r.ms.toFixed(1),
+        headColor: r.r[2] > 0.7 ? GOOD : r.r[2] > 0.3 ? WARN : BAD,
+        headBar: (r.r[2] * 100).toFixed(0) + '%',
+        curve: curve(r.r), chanceCurve: curve(CHANCE),
+        rowBg: i === runIdx ? 'rgba(145,132,217,.1)' : 'transparent',
+        tagColor: i === runIdx ? '#d2cefd' : '#e9e9ed',
+        pick: () => this.setState({ runIdx: i, tab: 'localize', mode: 'set' }),
+      })),
+      logLines: (s.log.length ? s.log : ['(no output yet — run a benchmark)']).map(t => ({
+        text: t,
+        color: t.startsWith('$') ? '#b5abfc' : t.startsWith('[stop]') ? BAD : t.indexOf('exit 0') > -1 ? GOOD : t.startsWith('RESULT_JSON') ? '#d2cefd' : 'rgba(233,233,237,.62)',
+      })),
+      logSummary: busy ? 'streaming · ' + s.log.length + ' lines' : s.log.length + ' lines · idle',
+      logRef: el => { if (el && busy) el.scrollTop = el.scrollHeight; },
+
+      // localize left column
+      runOpts: runs.map(r => ({ tag: r.tag })),
+      runTag: runs.length ? runs[runIdx].tag : '',
+      onRun: e => this.setState({ runIdx: Math.max(0, runs.findIndex(r => r.tag === e.target.value)), qIdx: 0 }),
+      nQ: runs.length ? NQ : 0,
+      queryRows: (runs.length ? Array.from({ length: 12 }, (_, i) => this.rec(i, model)) : []).map((r, i) => ({
+        id: 'q_' + String(i).padStart(4, '0'),
+        top1: fmtM(r.top1), best: fmtM(r.best), score: r.score.toFixed(3),
+        errColor: r.top1 <= 100 ? GOOD : BAD,
+        rowBg: i === s.qIdx ? 'rgba(145,132,217,.13)' : 'transparent',
+        idColor: i === s.qIdx ? '#d2cefd' : 'rgba(233,233,237,.8)',
+        pick: () => this.setState({ qIdx: i }),
+      })),
+      srcImg: s.srcImg, onImg: e => this.setState({ srcImg: e.target.value, imgResult: false }),
+      hintLine: showImg
+        ? (q ? 'Searching r10_t200 (812 tiles). Ground truth for this frame was found in the selected query set, so error is filled in.'
+             : 'Searching r10_t200 (812 tiles). No ground truth for this frame — error will read “—”.')
+        : '',
+      hintColor: 'rgba(233,233,237,.45)',
+
+      // retrieval panel
+      resTitle: q ? (showImg ? s.srcImg.split('/').pop() : q.id) : 'select a query',
+      resMeta: q ? label(showImg ? s.active : model) + ' · 812 tiles · rot 4 · top-5' : 'no result loaded',
+      queryFile: q ? (showImg ? s.srcImg : q.file) : 'Select a query',
+      showMap: !!q,
+      mapPts, mapLink, scaleTxt,
+      gtTxt: q ? q.gt.lat.toFixed(6) + ', ' + q.gt.lon.toFixed(6) : '—',
+      fusedTxt: q ? q.fused.lat.toFixed(6) + ', ' + q.fused.lon.toFixed(6) : '—',
+      top1Txt: q ? q.tiles[0].lat.toFixed(6) + ', ' + q.tiles[0].lon.toFixed(6) + '   (' + q.tiles[0].id + ', score ' + q.tiles[0].score.toFixed(3) + ')' : '—',
+      errBig: q ? 'top-1 ' + fmtM(q.top1) : '—',
+      errColor: q ? (q.top1 <= 100 ? GOOD : q.top1 <= 300 ? WARN : BAD) : 'rgba(233,233,237,.4)',
+      fusedErr: q ? fmtM(q.fusedErr) : '—', bestErr: q ? fmtM(q.best) : '—',
+      conf: q ? q.conf.toFixed(3) : '—', spread: q ? fmtM(q.spread) : '—',
+      tiles: (q ? q.tiles : []).map(t => ({
+        rank: t.rank, id: t.id,
+        lat: t.lat.toFixed(6), lon: t.lon.toFixed(6), score: t.score.toFixed(4),
+        err: fmtM(t.err),
+        errColor: t.err <= 100 ? GOOD : BAD,
+        frame: t.rank === 1 ? 'rgba(145,132,217,.55)' : 'rgba(233,233,237,.12)',
+        shadow: t.rank === 1 ? '0 0 18px rgba(145,132,217,.22)' : 'none',
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>

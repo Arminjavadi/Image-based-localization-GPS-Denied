@@ -18,6 +18,14 @@ from avl.encoder import VPREncoder
 from avl.geo import haversine_m, weighted_geo_fusion
 from avl.index import HashIndex, SearchResult
 from avl.metadata import ReferenceRecord, load_reference_metadata
+from avl.rerank import (
+    DEFAULT_BACKEND,
+    RERANK_BACKENDS,
+    RerankConfig,
+    RerankedList,
+    Reranker,
+    apply_rerank,
+)
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
@@ -130,6 +138,32 @@ def parse_args() -> argparse.Namespace:
         help="Omit per-query visual matches from reports generated for large query CSVs.",
     )
     parser.add_argument("--quiet", action="store_true", help="Disable reference encoding progress bars.")
+    parser.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Verify the retrieval short-list with local features + RANSAC before scoring.",
+    )
+    parser.add_argument(
+        "--rerank-backend",
+        choices=list(RERANK_BACKENDS),
+        default=DEFAULT_BACKEND,
+        help="Local-feature matcher used for geometric verification.",
+    )
+    parser.add_argument(
+        "--rerank-candidates",
+        type=int,
+        default=10,
+        help="Short-list depth handed to the re-ranking stage.",
+    )
+    parser.add_argument("--rerank-min-inliers", type=int, default=12)
+    parser.add_argument(
+        "--rerank-blend",
+        type=float,
+        default=0.5,
+        help="0 keeps the descriptor order, 1 ranks purely on RANSAC inliers.",
+    )
+    parser.add_argument("--rerank-max-features", type=int, default=2048)
+    parser.add_argument("--rerank-image-size", type=int, default=640)
     return parser.parse_args()
 
 
@@ -139,8 +173,9 @@ def parse_model_spec(value: str) -> ModelSpec:
         raise argparse.ArgumentTypeError("Expected MODEL:DIM or MODEL:DIM:BACKBONE")
 
     model = parts[0].lower()
-    if model not in {"denseuav-vit", "mixvpr", "cosplace"}:
-        raise argparse.ArgumentTypeError("MODEL must be denseuav-vit, mixvpr, or cosplace")
+    allowed = {"denseuav-vit", "game4loc", "sample4geo", "mixvpr", "cosplace", "eigenplaces"}
+    if model not in allowed:
+        raise argparse.ArgumentTypeError(f"MODEL must be one of {', '.join(sorted(allowed))}")
 
     try:
         descriptor_dim = int(parts[1])
@@ -266,7 +301,7 @@ def reference_id(record: ReferenceRecord) -> str:
 def evaluate_quality(
     records: list[ReferenceRecord],
     queries: list[QueryRecord],
-    search_results: list[SearchResult],
+    ranked_results: list[RerankedList],
     recall_ks: list[int],
     primary_k: int,
 ) -> dict[str, Any]:
@@ -275,7 +310,7 @@ def evaluate_quality(
     top1_errors_m: list[float] = []
     fused_errors_m: list[float] = []
 
-    for query, search in zip(queries, search_results):
+    for query, search in zip(queries, ranked_results):
         matched_records = [records[int(idx)] for idx in search.indices]
         if not matched_records:
             continue
@@ -291,7 +326,7 @@ def evaluate_quality(
             top1_errors_m.append(haversine_m(query.latitude, query.longitude, best.latitude, best.longitude))
 
             fusion_records = matched_records[:GEO_FUSION_TOP_K]
-            fusion_scores = search.scores[:GEO_FUSION_TOP_K]
+            fusion_scores = search.weights[:GEO_FUSION_TOP_K]
             latitudes = np.array([record.latitude for record in fusion_records], dtype=np.float64)
             longitudes = np.array([record.longitude for record in fusion_records], dtype=np.float64)
             weights = np.array(fusion_scores, dtype=np.float64)
@@ -316,12 +351,12 @@ def evaluate_quality(
 def build_localization_results(
     records: list[ReferenceRecord],
     queries: list[QueryRecord],
-    search_results: list[SearchResult],
+    ranked_results: list[RerankedList],
     top_k: int | None = None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
-    for query, search in zip(queries, search_results):
+    for query, search in zip(queries, ranked_results):
         matches: list[dict[str, Any]] = []
         matched_records: list[ReferenceRecord] = []
         indices = search.indices[:top_k] if top_k is not None else search.indices
@@ -329,24 +364,27 @@ def build_localization_results(
         for rank, (idx, score) in enumerate(zip(indices, scores), start=1):
             record = records[int(idx)]
             matched_records.append(record)
-            matches.append(
-                {
-                    "rank": rank,
-                    "score": float(score),
-                    "image_path": record.image_path,
-                    "latitude": record.latitude,
-                    "longitude": record.longitude,
-                    "altitude_m": record.altitude_m,
-                    "heading_deg": record.heading_deg,
-                    "image_id": reference_id(record),
-                }
-            )
+            match: dict[str, Any] = {
+                "rank": rank,
+                "score": float(score),
+                "image_path": record.image_path,
+                "latitude": record.latitude,
+                "longitude": record.longitude,
+                "altitude_m": record.altitude_m,
+                "heading_deg": record.heading_deg,
+                "image_id": reference_id(record),
+            }
+            position = rank - 1
+            if position < len(search.per_match) and search.per_match[position] is not None:
+                match["rerank"] = search.per_match[position]
+                match["retrieval_rank"] = search.retrieval_ranks[position]
+            matches.append(match)
 
         estimated_position = None
         error_m = None
         if matched_records:
             fusion_records = matched_records[:GEO_FUSION_TOP_K]
-            fusion_scores = search.scores[:GEO_FUSION_TOP_K]
+            fusion_scores = search.weights[:GEO_FUSION_TOP_K]
             latitudes = np.array([record.latitude for record in fusion_records], dtype=np.float64)
             longitudes = np.array([record.longitude for record in fusion_records], dtype=np.float64)
             altitudes = np.array(
@@ -390,6 +428,7 @@ def build_localization_results(
                 "estimated_position": estimated_position,
                 "fusion_match_count": min(len(matches), GEO_FUSION_TOP_K),
                 "localization_error_m": error_m,
+                "rerank": search.summary,
                 "matches": matches,
             }
         )
@@ -407,6 +446,13 @@ def make_config(spec: ModelSpec, index_type: IndexType, args: argparse.Namespace
         query_rotations=args.query_rotations,
         index_type=index_type,
         top_k=args.top_k,
+        rerank_enabled=args.rerank,
+        rerank_backend=args.rerank_backend,
+        rerank_candidates=args.rerank_candidates,
+        rerank_max_features=args.rerank_max_features,
+        rerank_image_size=args.rerank_image_size,
+        rerank_min_inliers=args.rerank_min_inliers,
+        rerank_blend=args.rerank_blend,
     )
 
 
@@ -419,6 +465,9 @@ def benchmark_model(
 ) -> list[dict[str, Any]]:
     config = make_config(spec, index_types[0], args)
     encoder, model_load_s = timed_seconds(VPREncoder, config)
+    # One re-ranker per model run: the reference feature cache is reused across
+    # every query and every index type below.
+    reranker = Reranker(RerankConfig.from_avl_config(config))
 
     for _ in range(max(0, args.warmup)):
         encoder.encode_query(query_records[0].image_path)
@@ -477,14 +526,19 @@ def benchmark_model(
 
             search_times_s: list[float] = []
             search_results: list[SearchResult] = []
+            # Recall@10 needs ten survivors, so the stage trims to the deepest k
+            # any metric asks for, not to top_k.
             retrieval_k = max(args.top_k, *args.recall_k)
+            candidate_k = (
+                max(retrieval_k, reranker.config.candidates) if reranker.enabled else retrieval_k
+            )
             for descriptor in query_descriptors:
                 first_result: SearchResult | None = None
                 for repeat in range(max(1, args.repeats)):
                     result, elapsed_s = timed_seconds(
                         index.search_orientations,
                         descriptor,
-                        retrieval_k,
+                        candidate_k,
                     )
                     search_times_s.append(elapsed_s)
                     if repeat == 0:
@@ -493,21 +547,42 @@ def benchmark_model(
                     raise RuntimeError("No search result was produced")
                 search_results.append(first_result)
 
+            rerank_times_s: list[float] = []
+            ranked_results: list[RerankedList] = []
+            for query, result in zip(query_records, search_results):
+                ranked, elapsed_s = timed_seconds(
+                    apply_rerank,
+                    reranker,
+                    query.image_path,
+                    result.indices,
+                    result.scores,
+                    [reference_records[int(i)].image_path for i in result.indices],
+                    retrieval_k,
+                )
+                rerank_times_s.append(elapsed_s)
+                ranked_results.append(ranked)
+
             search_stats = stats_ms(search_times_s)
+            rerank_stats = stats_ms(rerank_times_s) if reranker.enabled else None
             run["online"]["search_ms"] = search_stats
+            run["online"]["rerank_ms"] = rerank_stats
+            run["online"]["rerank"] = reranker.config.as_dict()
             query_encode_mean = run["online"]["query_encode_ms"]["mean"] or 0.0
             search_mean = search_stats["mean"] or 0.0
-            run["online"]["encode_plus_search_ms_mean"] = query_encode_mean + search_mean
+            rerank_mean = (rerank_stats or {}).get("mean") or 0.0
+            run["online"]["encode_plus_search_ms_mean"] = (
+                query_encode_mean + search_mean + rerank_mean
+            )
             run["online"]["query_feature_images_per_s"] = (
                 1000.0 / query_encode_mean if query_encode_mean else None
             )
             run["online"]["search_queries_per_s"] = 1000.0 / search_mean if search_mean else None
-            total_mean = query_encode_mean + search_mean
+            total_mean = query_encode_mean + search_mean + rerank_mean
             run["online"]["online_queries_per_s"] = 1000.0 / total_mean if total_mean else None
             run["quality"] = evaluate_quality(
                 reference_records,
                 query_records,
-                search_results,
+                ranked_results,
                 args.recall_k,
                 args.top_k,
             )
@@ -517,7 +592,7 @@ def benchmark_model(
                 else build_localization_results(
                     reference_records,
                     query_records,
-                    search_results,
+                    ranked_results,
                     top_k=args.top_k,
                 )
             )
@@ -534,6 +609,8 @@ def flatten_run(run: dict[str, Any]) -> dict[str, Any]:
     online = run.get("online", {})
     query_encode = online.get("query_encode_ms", {})
     search = online.get("search_ms", {})
+    rerank_ms = online.get("rerank_ms") or {}
+    rerank = online.get("rerank") or {}
     quality = run.get("quality", {})
     recall_at = quality.get("recall_at", {})
     top1_error = quality.get("top1_error_m", {})
@@ -561,6 +638,12 @@ def flatten_run(run: dict[str, Any]) -> dict[str, Any]:
         "search_ms_mean": search.get("mean"),
         "search_ms_p95": search.get("p95"),
         "search_queries_per_s": online.get("search_queries_per_s"),
+        "rerank_enabled": rerank.get("enabled"),
+        "rerank_backend": rerank.get("backend") if rerank.get("enabled") else None,
+        "rerank_candidates": rerank.get("candidates") if rerank.get("enabled") else None,
+        "rerank_blend": rerank.get("blend") if rerank.get("enabled") else None,
+        "rerank_ms_mean": rerank_ms.get("mean"),
+        "rerank_ms_p95": rerank_ms.get("p95"),
         "encode_plus_search_ms_mean": online.get("encode_plus_search_ms_mean"),
         "online_queries_per_s": online.get("online_queries_per_s"),
         "top1_hit_rate": quality.get("top1_hit_rate"),
@@ -595,6 +678,7 @@ def print_summary(runs: list[dict[str, Any]]) -> None:
         "build s",
         "query enc ms",
         "search ms",
+        "rerank ms",
         "online ms",
         "R@1",
         "R@5",
@@ -604,8 +688,8 @@ def print_summary(runs: list[dict[str, Any]]) -> None:
     print("\nKPI summary")
     print(
         f"{header[0]:<24} {header[1]:<7} {header[2]:>14} {header[3]:>9} "
-        f"{header[4]:>13} {header[5]:>10} {header[6]:>10} {header[7]:>8} "
-        f"{header[8]:>8} {header[9]:>8} {header[10]}"
+        f"{header[4]:>13} {header[5]:>10} {header[6]:>10} {header[7]:>10} "
+        f"{header[8]:>8} {header[9]:>8} {header[10]:>8} {header[11]}"
     )
 
     for run in runs:
@@ -616,6 +700,7 @@ def print_summary(runs: list[dict[str, Any]]) -> None:
             f"{format_number(row['faiss_build_s']):>9} "
             f"{format_number(row['query_encode_ms_mean']):>13} "
             f"{format_number(row['search_ms_mean']):>10} "
+            f"{format_number(row['rerank_ms_mean']):>10} "
             f"{format_number(row['encode_plus_search_ms_mean']):>10} "
             f"{format_number(row['recall_at_1']):>8} "
             f"{format_number(row['recall_at_5']):>8} "

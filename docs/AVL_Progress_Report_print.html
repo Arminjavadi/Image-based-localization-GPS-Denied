@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="./">
+<title>GPS-Denied AVL Progress Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Spectral:wght@500;600;700&display=swap">
+<style>
+/* Layout: one reading column (~70ch) on a cool map-grey ground; tables, charts and figures
+   may run wider inside their own scroll boxes. Accent = survey teal; charts use the
+   validated categorical slots (blue / orange / aqua). */
+:root {
+  --bg: #f3f5f4;
+  --surface: #fcfcfb;
+  --ink: #142120;
+  --ink-2: #44514e;
+  --muted: #6b7774;
+  --rule: #d7dddb;
+  --grid: #e5e9e7;
+  --accent: #0d6b67;
+  --accent-soft: #e1eeec;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --ok: #0f7d3a;
+  --warn: #9a5b00;
+  --no: #b03535;
+  --font-display: "Spectral", Georgia, "Times New Roman", serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --measure: 70ch;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111615; --surface: #192020; --ink: #e8eeec; --ink-2: #b6c1be; --muted: #8b9894;
+    --rule: #2b3533; --grid: #253030; --accent: #57b9b1; --accent-soft: #1b2e2c;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --ok: #5cc98a; --warn: #e3a34b; --no: #ee7b7b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111615; --surface: #192020; --ink: #e8eeec; --ink-2: #b6c1be; --muted: #8b9894;
+  --rule: #2b3533; --grid: #253030; --accent: #57b9b1; --accent-soft: #1b2e2c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --ok: #5cc98a; --warn: #e3a34b; --no: #ee7b7b;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  padding-inline: 16px; padding-block: 0 64px;
+}
+.wrap { max-width: 1040px; margin: 0 auto; }
+.prose { max-width: var(--measure); }
+h1, h2, h3, h4 { font-family: var(--font-display); text-wrap: balance; color: var(--ink); line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(2rem, 4.6vw, 3rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.75rem; font-weight: 600; }
+h3 { font-size: 1.3rem; font-weight: 600; }
+h4 { font-size: 1.05rem; font-weight: 600; font-family: var(--font-body); }
+p { margin: 0; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.num, td.n, .tab { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); font-size: 0.9em; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+.small { font-size: 0.88rem; }
+
+/* header */
+header.top { padding-block: 48px 28px; display: grid; gap: 14px; border-bottom: 1px solid var(--rule); }
+header.top .lede { font-size: 1.15rem; color: var(--ink-2); max-width: var(--measure); }
+header.top .meta { font-family: var(--font-mono); font-size: 0.82rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-block: 28px 8px; }
+.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; display: grid; gap: 6px; align-content: start; }
+.tile .big { font-family: var(--font-display); font-size: 1.85rem; font-weight: 700; color: var(--ink); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tile .big .arrow { color: var(--accent); }
+.tile p { font-size: 0.9rem; color: var(--ink-2); }
+
+nav.toc { margin-block: 22px 8px; display: grid; gap: 8px; }
+nav.toc ol { margin: 0; padding-left: 1.4em; columns: 2 260px; column-gap: 32px; font-size: 0.95rem; }
+nav.toc li { break-inside: avoid; padding-block: 2px; }
+
+section { padding-block: 44px 8px; border-bottom: 1px solid var(--rule); display: grid; gap: 18px; }
+section:last-of-type { border-bottom: 0; }
+section > h2 { display: flex; gap: 12px; align-items: baseline; }
+section > h2 .sn { font-family: var(--font-mono); font-size: 0.95rem; color: var(--accent); font-weight: 500; }
+.method { display: grid; gap: 14px; padding-block: 18px 6px; border-top: 1px dashed var(--rule); }
+.method:first-of-type { border-top: 0; }
+.method-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; }
+
+.chip { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.no { color: var(--no); } .chip.next { color: var(--accent); }
+.chip::before { margin-right: 5px; }
+.chip.ok::before { content: "✓"; } .chip.warn::before { content: "◐"; } .chip.no::before { content: "✕"; } .chip.next::before { content: "→"; }
+
+.origin { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 12px 16px; border-radius: 0 6px 6px 0; max-width: var(--measure); display: grid; gap: 6px; }
+.origin .eyebrow { font-size: 0.72rem; }
+.origin p { font-size: 0.95rem; color: var(--ink); }
+
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 0.95rem; max-width: var(--measure); }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+
+ul.tight, ol.tight { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; max-width: var(--measure); }
+
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+caption { caption-side: top; text-align: left; padding: 12px 14px 4px; font-size: 0.86rem; color: var(--muted); }
+th, td { padding: 8px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--grid); }
+thead th { font-weight: 600; color: var(--ink-2); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+tr.em td { font-weight: 600; }
+tr.group td { background: var(--bg); color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+td .up { color: var(--ok); font-weight: 600; } td .down { color: var(--no); font-weight: 600; }
+
+figure { margin: 0; display: grid; gap: 8px; }
+.mat { background: #ffffff; border: 1px solid var(--rule); border-radius: 6px; padding: 10px; overflow-x: auto; }
+.mat img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+figcaption { font-size: 0.86rem; color: var(--muted); max-width: var(--measure); }
+.chart { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px; position: relative; }
+.chart .scroll { overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.chart .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.85rem; color: var(--ink-2); padding: 2px 4px 8px; }
+.chart .legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart .legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.chart .legend i.dot { width: 10px; height: 10px; border-radius: 50%; }
+.chart .legend i.dash { background: repeating-linear-gradient(90deg, var(--muted) 0 5px, transparent 5px 9px); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 0.8rem; line-height: 1.4; padding: 6px 9px; border-radius: 4px; max-width: 260px; z-index: 5; font-variant-numeric: tabular-nums; }
+
+svg text { font-family: var(--font-body); }
+svg .axis { fill: var(--muted); font-size: 12px; }
+svg .lab { fill: var(--ink-2); font-size: 13px; }
+svg .val { fill: var(--ink); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+svg .gridline { stroke: var(--grid); stroke-width: 1; }
+svg .baseline { stroke: var(--rule); stroke-width: 1; }
+svg .bar { fill: var(--s1); }
+svg .bar.hi { fill: var(--s2); }
+svg .hit { fill: transparent; cursor: default; }
+svg .ring { stroke: var(--surface); stroke-width: 2; }
+svg .ser1 { stroke: var(--s1); fill: none; stroke-width: 2; } svg .pt1 { fill: var(--s1); }
+svg .ser2 { stroke: var(--s2); fill: none; stroke-width: 2; } svg .pt2 { fill: var(--s2); }
+svg .ser3 { stroke: var(--s3); fill: none; stroke-width: 2; } svg .pt3 { fill: var(--s3); }
+svg .serp { stroke: var(--muted); fill: none; stroke-width: 2; stroke-dasharray: 5 4; } svg .ptp { fill: var(--muted); }
+
+pre.mermaid { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 14px; overflow-x: auto; margin: 0; font-size: 0.85rem; }
+
+.refs ol { margin: 0; padding-left: 2.2em; display: grid; gap: 8px; font-size: 0.9rem; max-width: 80ch; }
+.refs li::marker { font-family: var(--font-mono); color: var(--muted); }
+.refs li:target { background: var(--accent-soft); outline: 4px solid var(--accent-soft); }
+sup.cite { font-size: 0.72em; line-height: 0; }
+sup.cite a { text-decoration: none; font-family: var(--font-mono); }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start; }
+.two > * { min-width: 0; }
+.note { font-size: 0.88rem; color: var(--ink-2); max-width: var(--measure); }
+
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+
+<style>
+@page { size: A4; margin: 15mm 13mm 17mm 13mm;
+  @bottom-left { content: "GPS-Denied AVL Progress Report"; font: 8.5pt 'Public Sans', sans-serif; color: #6b7774; }
+  @bottom-right { content: counter(page) " / " counter(pages); font: 8.5pt 'Public Sans', sans-serif; color: #6b7774; } }
+@media print {
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  :root { --bg: #ffffff; }
+  body { padding: 0; font-size: 10.5pt; line-height: 1.5; background: #ffffff; }
+  tr.group td { background: #f1f4f3; }
+  .wrap { max-width: none; }
+  header.top { padding-block: 0 18px; }
+  h1 { font-size: 24pt; }
+  h2 { font-size: 16pt; }
+  h3 { font-size: 12.5pt; }
+  section { padding-block: 22px 6px; gap: 12px; }
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .tile .big { font-size: 17pt; }
+  .table-wrap, .chart .scroll, .mat, pre.mermaid { overflow: visible; }
+  table { font-size: 8.4pt; }
+  th, td { padding: 4px 7px; }
+  thead th { font-size: 7.4pt; white-space: normal; }
+  td.n, th.n { white-space: nowrap; }
+  .chart svg { min-width: 0; }
+  .table-wrap, figure, .chart, .tile, .origin, pre.mermaid, .kv, tr, .method-head { break-inside: avoid; }
+  h2, h3, h4, .method-head, .origin { break-after: avoid; }
+  section#encoders, section#methods, section#progress, section#origins, section#refs { break-before: page; }
+  .tip { display: none !important; }
+  nav.toc ol { columns: 2; }
+  a { color: #0d6b67; text-decoration: none; }
+  .refs ol { font-size: 8.8pt; }
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>document.addEventListener('DOMContentLoaded', function () { if (window.mermaid) { mermaid.initialize({ startOnLoad: false, theme: 'neutral', fontFamily: 'Public Sans, sans-serif', flowchart: { padding: 14, wrappingWidth: 220 } }); document.fonts.ready.then(function () { mermaid.run({ querySelector: 'pre.mermaid' }); }); } });</script>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Progress report · Absolute visual localization (AVL) for GPS-denied UAVs</p>
+  <h1>Finding a drone's position from its camera and a satellite map</h1>
+  <p class="lede">The drone compares each camera frame with geo-tagged satellite tiles and reads its latitude and longitude from the best match. This report covers every encoder we evaluated, the datasets, the methods we added on top of the encoders, how much each one helped, and the published work each idea came from.</p>
+  <p class="meta"><span>2 October 2026</span><span>Data: UAV-VisLoc, DenseUAV, Copernicus GLO-30</span><span>All numbers measured in this repository unless marked as literature or projection</span></p>
+</header>
+
+<div class="tiles" aria-label="Headline results">
+  <div class="tile"><span class="big">45.1% <span class="arrow">→</span> 55.4%</span><p>Mean top-1 accuracy (within 100 m) over four test regions, before and after altitude-based scale correction. MegaLoc encoder.</p></div>
+  <div class="tile"><span class="big">26.4% <span class="arrow">→</span> 65.3%</span><p>Region 11, where the map tiles covered half of each frame's ground. Altitude fixes the scale mismatch.</p></div>
+  <div class="tile"><span class="big">56.9% <span class="arrow">→</span> 91.7%</span><p>Region 05, one encoder to a three-encoder ensemble with heading alignment and top-5 fusion.</p></div>
+  <div class="tile"><span class="big">≈ 5 fixes/s</span><p>Projected ensemble speed on a Jetson Orin Nano 8 GB Super (module $399). About 1 fix/s is needed.</p></div>
+</div>
+
+<nav class="toc" aria-label="Contents">
+  <p class="eyebrow">Contents</p>
+  <ol>
+    <li><a href="#summary">Summary</a></li>
+    <li><a href="#problem">The problem and our approach</a></li>
+    <li><a href="#data">Datasets</a></li>
+    <li><a href="#encoders">Encoders: size, cost, accuracy</a></li>
+    <li><a href="#methods">Methods we added</a></li>
+    <li><a href="#progress">Progress, step by step</a></li>
+    <li><a href="#rigor">How we checked the results</a></li>
+    <li><a href="#origins">Where each idea came from</a></li>
+    <li><a href="#hardware">Running it on the drone</a></li>
+    <li><a href="#next">Next steps</a></li>
+    <li><a href="#refs">References</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ 1 -->
+<section id="summary">
+  <h2><span class="sn">01</span>Summary</h2>
+  <div class="prose" style="display:grid;gap:12px">
+    <p><strong>The starting problem.</strong> Every encoder works well in the region it was trained on and poorly elsewhere. DenseUAV-ViT finds 96.4% of frames within 100 m on its own DenseUAV data, but only 19–33% on UAV-VisLoc. Training a new model for every region we fly is not practical.</p>
+    <p><strong>Our strategy.</strong> Keep general, off-the-shelf encoders and help them with what the drone already knows: its heading, its altitude, its approximate position from the IMU, and several encoders that make different mistakes. Nothing is trained on the test regions.</p>
+    <p><strong>Where we are.</strong></p>
+  </div>
+  <ul class="tight">
+    <li><strong>Best single encoder:</strong> MegaLoc. With heading, domain centering and altitude scaling it averages 55.4% top-1 within 100 m over four regions (74.3 / 37.5 / 44.4 / 65.3%).</li>
+    <li><strong>Best accuracy:</strong> a three-encoder ensemble (MegaLoc + Game4Loc + AnyLoc-L) reaches 85.4% top-1, and 91.7% after fusing the top-5 candidates, on region 05.</li>
+    <li><strong>Biggest single lift:</strong> altitude-based scale correction, +37.5 points on region 11 (58 frames won, 4 lost, p &lt; 10⁻¹²).</li>
+    <li><strong>Searching only near the IMU-predicted position</strong> adds 12–19 points when the prior is 100 m uncertain.</li>
+    <li><strong>Hardware:</strong> a Jetson Orin Nano 8 GB Super ($399 module) should run the full ensemble at about 5 fixes per second (projection, to be measured).</li>
+    <li><strong>Not solved yet:</strong> metre-level accuracy (needs a learned image matcher), a fusion filter that tolerates long runs of wrong fixes, and tests with a real IMU.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 2 -->
+<section id="problem">
+  <h2><span class="sn">02</span>The problem and our approach</h2>
+  <div class="prose" style="display:grid;gap:12px">
+    <p>Without GPS, an inertial unit alone drifts by hundreds of metres within minutes. An <em>absolute</em> fix is needed: the drone looks down, and its frame is matched against a satellite map stored on board. The map is cut into square tiles, each tile is turned into a descriptor vector by an encoder once before flight, and in flight the frame's vector is compared with all tile vectors. The best tiles give the position.</p>
+    <p>The hard part is that a drone frame and a satellite tile of the same place look different: different camera, date, season, sun, rotation and scale. Encoders trained to bridge this gap learn the look of their training region.</p>
+  </div>
+  <pre class="mermaid">
+flowchart LR
+  A[Drone frame] --> B[Preprocess<br/>heading rotation<br/>altitude scale crop]
+  B --> C[Encoder<br/>MegaLoc or ensemble]
+  M[(Satellite tiles<br/>encoded before flight)] --> D
+  C --> D[Search tiles<br/>near IMU prediction]
+  D --> E[Fuse top-5<br/>candidates]
+  E --> F[Error-state Kalman<br/>filter with IMU]
+  F --> G[Latitude and longitude]
+  S[IMU, barometer,<br/>compass] --> B
+  S --> F
+  F -. predicted position .-> D
+  </pre>
+  <p class="note">Each box we added around the encoder is described in <a href="#methods">section 5</a>. Everything in this report evaluates the retrieval part (frame → tile); the filter was tested with a simulated IMU only.</p>
+</section>
+
+<!-- ============================================================ 3 -->
+<section id="data">
+  <h2><span class="sn">03</span>Datasets</h2>
+  <div class="two">
+    <div style="display:grid;gap:10px">
+      <h3>UAV-VisLoc <sup class="cite"><a href="#ref-15">[15]</a></sup> — our main test set</h3>
+      <dl class="kv">
+        <dt>Where</dt><dd>11 regions across China, about 380 km² of satellite mosaics</dd>
+        <dt>Images</dt><dd>6,742 drone frames listed; 4,178 present in our copy</dd>
+        <dt>Altitude</dt><dd>400–2,600 m above sea level; 190–858 m above ground (measured, see 5.7)</dd>
+        <dt>Cameras</dt><dd>3000 × 2000 px and 3976 × 2652 px, nadir</dd>
+        <dt>Map</dt><dd>one georeferenced satellite mosaic per region, 0.23–0.30 m/px</dd>
+        <dt>Labels</dt><dd>GPS latitude, longitude, altitude, heading per frame</dd>
+        <dt>Role</dt><dd><strong>No encoder was trained on it.</strong> This is the generalization test.</dd>
+      </dl>
+    </div>
+    <div style="display:grid;gap:10px">
+      <h3>DenseUAV <sup class="cite"><a href="#ref-7">[7]</a></sup> — in-domain reference</h3>
+      <dl class="kv">
+        <dt>Where</dt><dd>14 university campuses, Hangzhou, China</dd>
+        <dt>Images</dt><dd>40,833 (9,099 drone, 31,734 satellite tiles)</dd>
+        <dt>Altitude</dt><dd>80, 90 and 100 m</dd>
+        <dt>Sampling</dt><dd>dense grid, about 20 m between locations</dd>
+        <dt>Role</dt><dd>shows what a model achieves in the region it was trained on</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <caption>The four UAV-VisLoc regions used for evaluation. The first 144 frames of each flight are evaluated (all of region 10). AGL = height above ground.</caption>
+      <thead><tr><th>Region</th><th>Place</th><th>Camera</th><th class="n">Frames on disk</th><th class="n">AGL, evaluated frames</th><th>Map tiles</th><th class="n">Tiles</th><th>Character</th></tr></thead>
+      <tbody>
+        <tr><td>r05</td><td>Yunnan</td><td>3000 × 2000</td><td class="n">473</td><td class="n">360–404 m</td><td>250 m, 100 m stride</td><td class="n">384</td><td>highland, straight east–west line; flies at 2,313 m above sea level</td></tr>
+        <tr><td>r10</td><td>Huailai</td><td>3000 × 2000</td><td class="n">144</td><td class="n">286–299 m</td><td>200 m, 100 m stride</td><td class="n">196</td><td>flat valley; hardest for every encoder</td></tr>
+        <tr><td>r06</td><td>Zhuxi</td><td>3976 × 2652</td><td class="n">344</td><td class="n">264–344 m*</td><td>200 m, 100 m stride</td><td class="n">532</td><td>hilly; includes 6 frames on the take-off pad</td></tr>
+        <tr><td>r11</td><td>Shandan</td><td>3976 × 2652</td><td class="n">295</td><td class="n">244–808 m</td><td>250 m, 125 m stride</td><td class="n">2,052</td><td>high plateau; terrain changes the AGL by up to 3×; map never tuned</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">* 10th–90th percentile; the take-off frames sit at ground level. Satellite tiles are cut from the mosaic with overlap; a frame counts as correct when the top tile's centre lies within 100 m of the GPS position.</p>
+
+  <div class="table-wrap">
+    <table>
+      <caption>Other data used. The training sets explain why each encoder behaves the way it does.</caption>
+      <thead><tr><th>Data</th><th>What it is</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr><td>Copernicus GLO-30 DEM <sup class="cite"><a href="#ref-18">[18]</a></sup></td><td>global terrain heights, 30 m grid, &lt; 4 m vertical error (LE90)</td><td>height above ground (5.7)</td></tr>
+        <tr><td>University-1652 <sup class="cite"><a href="#ref-16">[16]</a></sup></td><td>50,218 images of 1,652 buildings at 72 universities; synthetic drone views</td><td>training data of Sample4Geo and CAMP</td></tr>
+        <tr><td>SUES-200 <sup class="cite"><a href="#ref-17">[17]</a></sup></td><td>24,120 drone and satellite images at 150, 200, 250, 300 m</td><td>shows that accuracy depends on flight height</td></tr>
+        <tr><td>GTA-UAV <sup class="cite"><a href="#ref-2">[2]</a></sup></td><td>33,763 synthetic drone frames from a video game, 80–650 m, 81 km²</td><td>training data of Game4Loc</td></tr>
+        <tr><td>LVD-142M, SAT-493M <sup class="cite"><a href="#ref-4">[4]</a><a href="#ref-5">[5]</a></sup></td><td>self-supervised pre-training images (web; Maxar satellite)</td><td>DINOv2, DINOv3, AnyLoc backbones</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 4 -->
+<section id="encoders">
+  <h2><span class="sn">04</span>Encoders: size, cost, accuracy</h2>
+  <p class="prose">An encoder turns an image into one descriptor vector. We integrated 15 encoders and benchmarked ten of them on UAV-VisLoc. Accuracy below is the raw setting: no heading, no centering, the frame searched at four rotations.</p>
+
+  <div class="table-wrap">
+    <table>
+      <caption>GMAC = billions of multiply-accumulates per image (measured). CPU time = one encode on the development laptop (Intel i7-7600U, 4 threads), from the benchmark logs. Accuracy = top-1 within 100 m, 144 frames.</caption>
+      <thead><tr><th>Encoder</th><th>Venue</th><th>Backbone (input px)</th><th class="n">Params</th><th class="n">GMAC</th><th class="n">Descriptor</th><th>Trained on</th><th class="n">CPU s</th><th class="n">r05</th><th class="n">r10</th><th class="n">r06</th></tr></thead>
+      <tbody>
+        <tr class="group"><td colspan="11">Trained for drone ↔ satellite matching</td></tr>
+        <tr><td>DenseUAV-ViT <sup class="cite"><a href="#ref-7">[7]</a></sup></td><td>TIP 2024</td><td>ViT-S/16 (224)</td><td class="n">22 M</td><td class="n">4.2</td><td class="n">512</td><td>DenseUAV</td><td class="n">0.19</td><td class="n">32.6</td><td class="n">18.8</td><td class="n">27.8</td></tr>
+        <tr><td>Game4Loc <sup class="cite"><a href="#ref-2">[2]</a></sup></td><td>AAAI 2025</td><td>ViT-B/16 (384)</td><td class="n">86 M</td><td class="n">49.3</td><td class="n">768</td><td>GTA-UAV (synthetic)</td><td class="n">2.01</td><td class="n">59.7</td><td class="n">16.7</td><td class="n">22.9</td></tr>
+        <tr><td>InfoGeo-dense <sup class="cite"><a href="#ref-6">[6]</a></sup></td><td>ICML 2026</td><td>DINOv2-B/14 + MixVPR head (448)</td><td class="n">90.5 M</td><td class="n">91.7</td><td class="n">4,096</td><td>DenseUAV</td><td class="n">1.94</td><td class="n"><strong>72.2</strong></td><td class="n">20.1</td><td class="n">27.1</td></tr>
+        <tr><td>InfoGeo-GTA <sup class="cite"><a href="#ref-6">[6]</a></sup></td><td>ICML 2026</td><td>same</td><td class="n">90.5 M</td><td class="n">91.7</td><td class="n">4,096</td><td>GTA-UAV</td><td class="n">1.95</td><td class="n">63.9</td><td class="n">—</td><td class="n">—</td></tr>
+        <tr class="group"><td colspan="11">General place recognition (street, landmark, aerial)</td></tr>
+        <tr class="em"><td>MegaLoc <sup class="cite"><a href="#ref-1">[1]</a></sup></td><td>CVPRW 2025</td><td>DINOv2-B/14 + SALAD (322)</td><td class="n">≈ 90 M</td><td class="n">45.9</td><td class="n">8,448</td><td>5 VPR datasets</td><td class="n">1.76</td><td class="n">56.9</td><td class="n">16.0</td><td class="n"><strong>34.7</strong></td></tr>
+        <tr class="group"><td colspan="11">Foundation features, no place-recognition training</td></tr>
+        <tr><td>AnyLoc-lite <sup class="cite"><a href="#ref-3">[3]</a></sup></td><td>RA-L 2023</td><td>DINOv2 ViT-B/14 + VLAD (224)</td><td class="n">86 M</td><td class="n">21.9</td><td class="n">24,576</td><td>none (vocabulary from the map)</td><td class="n">0.52</td><td class="n">44.4</td><td class="n">18.1</td><td class="n">13.2</td></tr>
+        <tr><td>AnyLoc-L <sup class="cite"><a href="#ref-3">[3]</a></sup></td><td>RA-L 2023</td><td>DINOv2 ViT-L/14 + VLAD (224)</td><td class="n">304 M</td><td class="n">77.8</td><td class="n">32,768</td><td>none</td><td class="n">1.54</td><td class="n">49.3</td><td class="n"><strong>28.5</strong></td><td class="n">—</td></tr>
+        <tr><td>AnyLoc-sat <sup class="cite"><a href="#ref-3">[3]</a><a href="#ref-5">[5]</a></sup></td><td>—</td><td>DINOv3-SAT ViT-L/16 + VLAD (256)</td><td class="n">300 M</td><td class="n">≈ 82</td><td class="n">32,768</td><td>satellite images only</td><td class="n">2.33</td><td class="n">28.5</td><td class="n">4.9</td><td class="n">—</td></tr>
+        <tr><td>DINOv3-B + GeM <sup class="cite"><a href="#ref-5">[5]</a></sup></td><td>2025</td><td>ViT-B/16 (320)</td><td class="n">86 M</td><td class="n">≈ 37</td><td class="n">768</td><td>web images</td><td class="n">0.68</td><td class="n">47.2</td><td class="n">—</td><td class="n">—</td></tr>
+        <tr class="group"><td colspan="11">Our combination</td></tr>
+        <tr class="em"><td>Ensemble: MegaLoc + Game4Loc + AnyLoc-L</td><td>this work</td><td>three backbones</td><td class="n">≈ 480 M</td><td class="n">173</td><td class="n">41,984</td><td>—</td><td class="n">5.31</td><td class="n"><strong>80.6</strong></td><td class="n">—</td><td class="n">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Integrated but not benchmarked on UAV-VisLoc: MixVPR <sup class="cite"><a href="#ref-9">[9]</a></sup> (ResNet-50, 10.9 M params, 8.4 GMAC), CosPlace <sup class="cite"><a href="#ref-10">[10]</a></sup> (ResNet-101, 46.7 M, 17.5 GMAC), EigenPlaces <sup class="cite"><a href="#ref-11">[11]</a></sup> (ResNet-50, 9.1 GMAC), Sample4Geo <sup class="cite"><a href="#ref-8">[8]</a></sup> (ConvNeXt-B, ≈ 45 GMAC), BoQ <sup class="cite"><a href="#ref-12">[12]</a></sup> (DINOv2-B, weights download incomplete). "—" = not run on that region.</p>
+
+  <figure>
+    <div class="chart" id="chart-scatter">
+      <div class="legend"><span><i class="dot" style="background:var(--s1)"></i>Single encoder</span><span><i class="dot" style="background:var(--s2)"></i>Three-encoder ensemble</span></div>
+      <div class="scroll"><svg id="svg-scatter" viewBox="0 0 760 430" role="img" aria-label="Accuracy on region 05 against compute per image, log scale"></svg></div>
+    </div>
+    <figcaption>Accuracy on r05 against compute (log scale). The ensemble is the only point that clearly beats every single encoder. InfoGeo-dense looks strong on r05 but drops to 20% on r10 and 27% on r06, so its lead does not generalize.</figcaption>
+  </figure>
+
+  <div class="table-wrap">
+    <table>
+      <caption>The generalization problem in one table. The same models, in their training domain and on UAV-VisLoc.</caption>
+      <thead><tr><th>Encoder</th><th class="n">DenseUAV (own domain)</th><th class="n">UAV-VisLoc r05</th><th class="n">UAV-VisLoc r10</th></tr></thead>
+      <tbody>
+        <tr><td>DenseUAV-ViT</td><td class="n">96.4% (89.2% within 25 m)</td><td class="n">32.6%</td><td class="n">18.8%</td></tr>
+        <tr><td>Game4Loc</td><td class="n">61.1%</td><td class="n">59.7%</td><td class="n">16.7%</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 5 -->
+<section id="methods">
+  <h2><span class="sn">05</span>Methods we added</h2>
+  <p class="prose">Each method is listed in the order we added it, with the paper that suggested it, what we did, and what it changed. All of them are training-free: no model weights were changed for the test regions.</p>
+
+  <!-- 5.1 -->
+  <div class="method" id="m-protocol">
+    <div class="method-head"><h3>5.1 A fair benchmark</h3><span class="chip ok">Adopted</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>Retrieval papers report recall of tile IDs, which cannot be compared across tile sizes. DenseUAV <sup class="cite"><a href="#ref-7">[7]</a></sup> introduced a distance-based score for the same reason. Dietterich <sup class="cite"><a href="#ref-33">[33]</a></sup> recommends McNemar's test for comparing two methods on the same test items.</p></div>
+    <ul class="tight">
+      <li>Score = distance in metres between the top tile's centre and the GPS position. We report top-1 within 25 / 50 / 100 / 200 m, top-5, median error and the error after fusion.</li>
+      <li>Every run also reports chance levels: a random tile, and the nearest tile in the map. A small map makes even random guessing look accurate.</li>
+      <li>Differences are tested with an exact paired McNemar test, per region and pooled. With 144 frames, one frame is 0.7 points, so differences under about 5 points need the test.</li>
+    </ul>
+  </div>
+
+  <!-- 5.2 -->
+  <div class="method" id="m-heading">
+    <div class="method-head"><h3>5.2 Heading alignment</h3><span class="chip ok">Adopted</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>The AnyVisLoc benchmark <sup class="cite"><a href="#ref-19">[19]</a></sup> measured that a 60° heading error costs 25.7 points of localization accuracy. FoundLoc <sup class="cite"><a href="#ref-20">[20]</a></sup> kept its drone's yaw north-aligned so that its place-recognition step would work, and Kinnari et al. <sup class="cite"><a href="#ref-23">[23]</a></sup> rotate and project frames with the drone's attitude before matching. The drone knows its heading from the compass and IMU, so the encoder should not have to guess the rotation.</p></div>
+    <p class="prose">Satellite tiles are north-up; a drone frame can point anywhere. The old pipeline encoded each frame at four rotations and kept the best. Now the frame is turned to the 90° step nearest north using the logged heading and encoded once.</p>
+    <div class="table-wrap"><table>
+      <caption>r05, top-1 within 100 m. One encode per frame instead of four.</caption>
+      <thead><tr><th>Encoder</th><th class="n">4-rotation search</th><th class="n">Heading (1 rotation)</th><th class="n">Change</th></tr></thead>
+      <tbody>
+        <tr><td>MegaLoc</td><td class="n">56.9</td><td class="n">68.1</td><td class="n"><span class="up">+11.2</span></td></tr>
+        <tr><td>AnyLoc-L</td><td class="n">49.3</td><td class="n">66.0</td><td class="n"><span class="up">+16.7</span></td></tr>
+        <tr><td>Game4Loc</td><td class="n">59.7</td><td class="n">58.3</td><td class="n">−1.4</td></tr>
+        <tr><td>Ensemble (3 encoders)</td><td class="n">80.6</td><td class="n">85.4</td><td class="n"><span class="up">+4.8</span></td></tr>
+        <tr><td>DenseUAV-ViT</td><td class="n">32.6</td><td class="n">32.6</td><td class="n">0 (trained to ignore rotation)</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Result: better accuracy at a quarter of the compute. We also tested exact rotation to north (not just 90° steps). It was equivalent within the grid-placement noise found in <a href="#rigor">section 7</a>.</p>
+  </div>
+
+  <!-- 5.3 -->
+  <div class="method" id="m-centering">
+    <div class="method-head"><h3>5.3 Domain centering</h3><span class="chip ok">Adopted (flight mode)</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>In high-dimensional spaces a few "hub" vectors become the nearest neighbour of almost everything. Suzuki et al. <sup class="cite"><a href="#ref-26">[26]</a></sup> showed that subtracting the data mean (centering) removes hubs. A 2025 study <sup class="cite"><a href="#ref-27">[27]</a></sup> showed that place recognition improves when the map, which is available before the flight, is used at test time. We use the map and the flight's own past frames, without any training.</p></div>
+    <p class="prose">All drone frames share a common component (camera colour, blur, sun), and all satellite tiles share another. Neither says anything about the place, yet both inflate similarity scores. We subtract the map's mean descriptor from the tiles and the running mean of the frames seen so far from each new frame.</p>
+    <div class="table-wrap"><table>
+      <caption>MegaLoc, top-1 within 100 m. "Flight" uses only past frames, so it runs in real time.</caption>
+      <thead><tr><th>Setting</th><th class="n">r05</th><th class="n">r10</th><th class="n">r06</th></tr></thead>
+      <tbody>
+        <tr><td>Raw</td><td class="n">56.9</td><td class="n">16.0</td><td class="n">34.7</td></tr>
+        <tr><td>Map mean only</td><td class="n">67.4</td><td class="n">20.1</td><td class="n">33.3</td></tr>
+        <tr><td>Flight mean (causal)</td><td class="n">63.2</td><td class="n">27.8</td><td class="n">37.5</td></tr>
+        <tr class="em"><td>Heading + flight mean</td><td class="n">74.3</td><td class="n">36.8</td><td class="n">43.1</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Flight mode is the consistent one: the map-only mean hurt Game4Loc on r10 (16.7 → 5.6%). Whitening the descriptors with PCA fitted on the map made results worse and was dropped.</p>
+  </div>
+
+  <!-- 5.4 -->
+  <div class="method" id="m-window">
+    <div class="method-head"><h3>5.4 Searching near the IMU prediction</h3><span class="chip ok">Adopted</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>STHN <sup class="cite"><a href="#ref-22">[22]</a></sup> localizes thermal frames within a 512 m radius of the last known position. NGPS <sup class="cite"><a href="#ref-21">[21]</a></sup> predicts the satellite search region from visual-inertial odometry velocity. FoundLoc <sup class="cite"><a href="#ref-20">[20]</a></sup> keeps a sliding window of recent positions. A drone with an IMU always has an approximate position, so it never needs to search the whole map.</p></div>
+    <p class="prose">We simulated a navigation prior: the true position plus Gaussian noise of standard deviation σ. Only tiles within 3σ of the prior are searched.</p>
+    <figure>
+      <div class="chart" id="chart-window">
+        <div class="legend"><span><i style="background:var(--s1)"></i>r05 · AnyLoc-L</span><span><i style="background:var(--s2)"></i>r06 · DenseUAV-ViT</span><span><i style="background:var(--s3)"></i>r10 · DenseUAV-ViT</span><span><i class="dash"></i>prior position alone</span></div>
+        <div class="scroll"><svg id="svg-window" viewBox="0 0 760 400" role="img" aria-label="Top-1 accuracy against the size of the search window"></svg></div>
+      </div>
+      <figcaption>Top-1 within 100 m as the IMU prior becomes more certain. The dashed line is how often the prior position by itself is within 100 m.</figcaption>
+    </figure>
+    <div class="table-wrap"><table>
+      <caption>Same data as the chart. Tiles = average number of tiles inside the window.</caption>
+      <thead><tr><th>Prior error σ</th><th class="n">Window radius</th><th class="n">Tiles (r05)</th><th class="n">r05 AnyLoc-L</th><th class="n">r06 DenseUAV-ViT</th><th class="n">r10 DenseUAV-ViT</th><th class="n">Prior alone</th><th class="n">Random tile in window (r05)</th></tr></thead>
+      <tbody>
+        <tr><td>no prior (global)</td><td class="n">—</td><td class="n">384</td><td class="n">49.3</td><td class="n">27.8</td><td class="n">18.8</td><td class="n">—</td><td class="n">—</td></tr>
+        <tr><td>400 m</td><td class="n">1,200 m</td><td class="n">192</td><td class="n">50.0</td><td class="n">29.9</td><td class="n">20.8</td><td class="n">2.1</td><td class="n">1.8</td></tr>
+        <tr><td>200 m</td><td class="n">600 m</td><td class="n">69</td><td class="n">54.9</td><td class="n">36.1</td><td class="n">24.3</td><td class="n">6.2</td><td class="n">4.9</td></tr>
+        <tr class="em"><td>100 m</td><td class="n">300 m</td><td class="n">21</td><td class="n">61.8</td><td class="n">46.5</td><td class="n">37.5</td><td class="n">36.8</td><td class="n">14.3</td></tr>
+        <tr><td>50 m</td><td class="n">150 m</td><td class="n">7</td><td class="n">72.9</td><td class="n">71.5</td><td class="n">63.2</td><td class="n">86.1</td><td class="n">40.5</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">At σ = 100 m the window adds 12–19 points, and retrieval beats both the prior alone (36.8%) and a random tile in the window (14.3%), so it adds real information. At σ = 50 m the prior alone is already better (86.1%): there, a visual fix should confirm the IMU, not replace it. In the full system σ comes from the Kalman filter's covariance.</p>
+  </div>
+
+  <!-- 5.5 -->
+  <div class="method" id="m-ensemble">
+    <div class="method-head"><h3>5.5 Encoder ensemble</h3><span class="chip ok">Adopted for accuracy</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>Multi-Process Fusion <sup class="cite"><a href="#ref-24">[24]</a></sup> showed that combining several place-recognition methods beats any one of them (F1 0.96 vs 0.78 for NetVLAD). Waheed et al. <sup class="cite"><a href="#ref-25">[25]</a></sup> showed that the gain comes from <em>complementarity</em>, methods that fail on different images, and measured it with a McNemar-style test. Our three encoders were trained on very different data (street and aerial photos, a video game, no training at all), so they should fail differently.</p></div>
+    <p class="prose">Each encoder's descriptor is normalized to length 1 and the three are concatenated. The cosine similarity of the long vector is then exactly the average of the three encoders' similarities: <span class="mono">score = (cos₁ + cos₂ + cos₃) / 3</span>. Nothing is trained, and every encoder has an equal vote.</p>
+    <div class="table-wrap"><table>
+      <caption>r05, top-1 within 100 m.</caption>
+      <thead><tr><th>Configuration</th><th class="n">Top-1</th><th class="n">After top-5 fusion</th></tr></thead>
+      <tbody>
+        <tr><td>MegaLoc alone · Game4Loc alone · AnyLoc-L alone</td><td class="n">56.9 · 59.7 · 49.3</td><td class="n">—</td></tr>
+        <tr><td>Ensemble of the three</td><td class="n">80.6</td><td class="n">—</td></tr>
+        <tr><td>Ensemble, domain-centered</td><td class="n">81.2</td><td class="n">89.6</td></tr>
+        <tr class="em"><td>Ensemble + heading</td><td class="n">85.4</td><td class="n">91.7</td></tr>
+        <tr><td>Four encoders (+ InfoGeo-dense) + heading + map centering</td><td class="n">88.9</td><td class="n">—</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">The ensemble adds 21 points over the best single encoder on r05. On the hard regions the best pairs reach 47.2% on r10 (MegaLoc + AnyLoc-L, against 36.8% for MegaLoc alone) and 47–49% on r06. The cost is the sum of the encoders: 173 GMAC, about 3.8× MegaLoc.</p>
+  </div>
+
+  <!-- 5.6 -->
+  <div class="method" id="m-fusion">
+    <div class="method-head"><h3>5.6 Fusing the top-5 candidates</h3><span class="chip ok">Adopted</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>FoundLoc <sup class="cite"><a href="#ref-20">[20]</a></sup> clusters the retrieved positions with DBSCAN and keeps only the largest cluster, because a wrong match tends to be isolated while the right area collects several matches.</p></div>
+    <p class="prose">Five strategies are implemented (cluster, softmax mean, geometric median, weighted mean, top-1). The default <span class="mono">cluster</span> weights the top-5 by score, groups them within 150 m, keeps the heaviest group and averages it.</p>
+    <div class="table-wrap"><table>
+      <caption>Top-1 vs fused position, within 100 m.</caption>
+      <thead><tr><th>Setting</th><th class="n">Top-1</th><th class="n">Fused</th></tr></thead>
+      <tbody>
+        <tr><td>Ensemble + heading, r05</td><td class="n">85.4</td><td class="n">91.7</td></tr>
+        <tr><td>AnyLoc-L, IMU window σ = 100 m, r05</td><td class="n">61.8</td><td class="n">70.1</td></tr>
+        <tr><td>DenseUAV-ViT, IMU window σ = 100 m, r10</td><td class="n">37.5</td><td class="n">49.3</td></tr>
+        <tr><td>MegaLoc + altitude crop, r11</td><td class="n">63.9</td><td class="n">67.4</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- 5.7 -->
+  <div class="method" id="m-height">
+    <div class="method-head"><h3>5.7 Height above ground fixes the scale</h3><span class="chip ok">Adopted (gated)</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>A 2026 study <sup class="cite"><a href="#ref-28">[28]</a></sup> estimated the drone's altitude and cropped each frame to the map's scale before retrieval, gaining 41.5 points of recall. SUES-200 <sup class="cite"><a href="#ref-17">[17]</a></sup> showed that accuracy changes with flight height, and a scale-aware method <sup class="cite"><a href="#ref-29">[29]</a></sup> recovered scale from cars in the image. Our drone does not need to estimate altitude from the image: the barometer gives it, and a public terrain model <sup class="cite"><a href="#ref-18">[18]</a></sup> turns it into height above the ground.</p></div>
+    <p class="prose">A frame covers <span class="mono">k × AGL</span> metres of ground, where <span class="mono">k = 2·tan(field of view / 2)</span> and AGL is the height above ground. When a frame covers twice the ground of a map tile, the encoder compares the right place at the wrong zoom.</p>
+
+    <h4>Step 1 · Height above ground</h4>
+    <ul class="tight">
+      <li>AGL = logged altitude above sea level − terrain height from Copernicus GLO-30 (8 tiles, 320 MB, downloaded once).</li>
+      <li>r05 flies at 2,313 m above sea level but only <strong>374 m above the ground</strong>. On r11 the terrain changes the AGL from 244 to 808 m within the evaluated frames.</li>
+      <li>Check: on r06's take-off pad the computed AGL is −6 to −7 m, so the flight log and the terrain model agree within a few metres.</li>
+      <li>In flight the terrain is read at the IMU-predicted position. Reading it 300 m away from the truth, plus a 15 m barometer bias, changed r11 by −3.5 points (not significant).</li>
+    </ul>
+    <figure><div class="mat"><img src="report_figs/scale/s1_agl_profiles.png" alt="Altitude above sea level, terrain height and height above ground along four flights" loading="lazy"></div><figcaption>Flight altitude (grey), terrain (green) and height above ground (blue band) for r05, r10, r06 and r11. The evaluated frames are shaded.</figcaption></figure>
+
+    <h4>Step 2 · Camera constant k</h4>
+    <ul class="tight">
+      <li>UAV-VisLoc does not publish its lenses, so k was measured: a frame is compared with satellite patches of 11 sizes at its GPS position, and the best-matching size gives k.</li>
+      <li>One camera (3976 × 2652 px) flown over four regions at 308–778 m AGL needs <strong>one constant</strong>: k = 1.00, a 53° field of view. Two different encoders agree within 1.2%.</li>
+      <li>The two regions with 3000 × 2000 px frames turned out to use <strong>two different lenses</strong> (52° and 62–73°). On a real drone, k comes from the lens datasheet.</li>
+    </ul>
+    <figure><div class="mat"><img src="report_figs/scale/s2_calibration.png" alt="Calibration of the camera constant per frame and per region" loading="lazy"></div><figcaption>Left: single-frame estimates are noisy. Right: per-region constants. Camera B (filled) stays near k = 1.0 from 308 to 778 m AGL.</figcaption></figure>
+
+    <h4>Step 3 · Crop only when needed (the gate)</h4>
+    <p class="prose">The frame is cropped to the tile's ground size only when altitude says it covers more than 1.25× a tile. Smaller mismatches keep the whole frame, because its context is worth more than an exact scale.</p>
+    <div class="table-wrap"><table>
+      <caption>MegaLoc + heading + flight centering, top-1 within 100 m. "With altitude" is the shipped command, run end to end. On r05, r10 and r06 no frame needs cropping; their small differences come from a 2-pixel difference in how the shipped code rotates the frame.</caption>
+      <thead><tr><th>Region</th><th class="n">Frame ÷ tile</th><th class="n">Current pipeline</th><th class="n">With altitude</th><th class="n">Change</th></tr></thead>
+      <tbody>
+        <tr><td>r05</td><td class="n">0.96</td><td class="n">74.3</td><td class="n">74.3</td><td class="n">0 (no crop needed)</td></tr>
+        <tr><td>r10</td><td class="n">1.17</td><td class="n">36.8</td><td class="n">37.5</td><td class="n">+0.7</td></tr>
+        <tr><td>r06</td><td class="n">1.06</td><td class="n">43.1</td><td class="n">44.4</td><td class="n">+1.3</td></tr>
+        <tr class="em"><td>r11</td><td class="n">1.88</td><td class="n">26.4</td><td class="n">65.3</td><td class="n"><span class="up">+38.9</span></td></tr>
+        <tr class="em"><td>Mean of four</td><td class="n"></td><td class="n">45.1</td><td class="n">55.4</td><td class="n"><span class="up">+10.3</span></td></tr>
+      </tbody>
+    </table></div>
+    <ul class="tight">
+      <li>On r11 the crop beats the uncropped frame in 58 frames and loses in 4 (p &lt; 10⁻¹²). It also beats the old blind three-scale search by 9 points (p = 0.015) with a third of the encoder runs.</li>
+      <li>Robust to height error: ±10% error changes almost nothing; ±20% keeps more than 80% of the gain.</li>
+      <li>The same idea on the map side, cutting tiles at the frame's ground size, gives +29.2 points on r11 for MegaLoc and +22.2 for DenseUAV-ViT (both p &lt; 0.001), with tile centres held fixed. This is the more encoder-independent option when the flight altitude is known before take-off.</li>
+    </ul>
+    <figure><div class="mat"><img src="report_figs/scale/s7_headline_megaloc_map_flight.png" alt="Bar chart comparing scale policies across four regions" loading="lazy"></div><figcaption>All scale policies on all four regions (MegaLoc). Orange, gated crop: the recommended policy. Blue, tiles cut at the frame's ground size.</figcaption></figure>
+  </div>
+
+  <!-- 5.8 -->
+  <div class="method" id="m-rerank">
+    <div class="method-head"><h3>5.8 Re-ranking with local features</h3><span class="chip no">Not adopted (classic features)</span><span class="chip next">Learned matchers next</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>Most localization pipelines verify the top retrieved images with feature matching and a geometric check before trusting them. AnyVisLoc <sup class="cite"><a href="#ref-19">[19]</a></sup> compared 20 matchers for drone-to-map matching: the learned matcher RoMa reached 70.1% within 5 m against 43.9% for SIFT on aerial maps, and only 18.5% on satellite maps.</p></div>
+    <ul class="tight">
+      <li>We tried SIFT, ORB and AKAZE with RANSAC homographies on the top-10 tiles.</li>
+      <li>On r10, 0 of 10 candidates were verified for 144 of 144 frames. Even the correct tile, 45 m away, produced only about 40 matches, and every fitted homography was degenerate.</li>
+      <li>Before we added a plausibility check, these false "verifications" dropped DenseUAV accuracy from 0.60 to 0.15. The check now protects any future matcher.</li>
+      <li>Conclusion: classic features cannot bridge the drone-to-satellite gap. Learned, cross-domain matchers (LightGlue <sup class="cite"><a href="#ref-34">[34]</a></sup>, GIM <sup class="cite"><a href="#ref-35">[35]</a></sup>, MatchAnything <sup class="cite"><a href="#ref-36">[36]</a></sup>) are the next experiment.</li>
+    </ul>
+  </div>
+
+  <!-- 5.9 -->
+  <div class="method" id="m-traj">
+    <div class="method-head"><h3>5.9 Visual-inertial trajectory filter</h3><span class="chip warn">Prototype (simulated IMU)</span></div>
+    <div class="origin"><p class="eyebrow">Where the idea comes from</p><p>Every working system we found combines visual fixes with odometry. FoundLoc <sup class="cite"><a href="#ref-20">[20]</a></sup> uses an EKF on a Jetson Xavier NX; NGPS <sup class="cite"><a href="#ref-21">[21]</a></sup> uses a UKF and reaches 2.94 m RMSE at 60–150 m altitude. Our filter follows the error-state Kalman filter formulation of Solà <sup class="cite"><a href="#ref-30">[30]</a></sup>.</p></div>
+    <ul class="tight">
+      <li>15-state error-state Kalman filter: position, velocity, attitude, accelerometer and gyro biases. Visual fixes enter as position measurements with a χ² gate that rejects outliers.</li>
+      <li>Tested with a simulated consumer-grade IMU on the real UAV-VisLoc flight timing (r05, AnyLoc-lite, 50 frames): median error 70 → 68 m, 95th percentile 652 → 308 m, worst case 810 → 403 m. The gate rejected 7 of the 9 fixes that were more than 200 m wrong.</li>
+      <li>On a simulated 5 km route the IMU alone drifted 82% of the distance flown; visual fixes alone had a 126 m median error; fused: 59 m.</li>
+      <li>Limitation: a single-hypothesis filter can lock itself out after a long run of wrong fixes. A particle filter or trajectory consensus, as in Jurevičius et al. <sup class="cite"><a href="#ref-31">[31]</a></sup> and NaviLoc <sup class="cite"><a href="#ref-32">[32]</a></sup>, is the planned fix.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ 6 -->
+<section id="progress">
+  <h2><span class="sn">06</span>Progress, step by step</h2>
+  <figure>
+    <div class="chart" id="chart-ladder">
+      <div class="scroll"><svg id="svg-ladder" viewBox="0 0 760 290" role="img" aria-label="Region 05 accuracy after each step"></svg></div>
+    </div>
+    <figcaption>Region 05, top-1 within 100 m. Each bar is the best configuration measured at that stage. Region 05 is our easiest region; the table below shows all four.</figcaption>
+  </figure>
+  <div class="table-wrap"><table>
+    <caption>All regions, top-1 within 100 m. "—" = not measured.</caption>
+    <thead><tr><th>Stage</th><th class="n">r05</th><th class="n">r10</th><th class="n">r06</th><th class="n">r11</th><th class="n">GMAC / frame</th></tr></thead>
+    <tbody>
+      <tr><td>MegaLoc, 4-rotation search</td><td class="n">56.9</td><td class="n">16.0</td><td class="n">34.7</td><td class="n">—</td><td class="n">184</td></tr>
+      <tr><td>+ heading and flight centering</td><td class="n">74.3</td><td class="n">36.8</td><td class="n">43.1</td><td class="n">26.4</td><td class="n">46</td></tr>
+      <tr class="em"><td>+ altitude-based scale (shipped)</td><td class="n">74.3</td><td class="n">37.5</td><td class="n">44.4</td><td class="n">65.3</td><td class="n">46</td></tr>
+      <tr><td>Best ensemble measured</td><td class="n">85.4 (91.7 fused)</td><td class="n">47.2</td><td class="n">47–49</td><td class="n">—</td><td class="n">124–173</td></tr>
+      <tr><td>+ IMU window, σ = 100 m (other encoders, see 5.4)</td><td class="n">+12.5</td><td class="n">+18.7</td><td class="n">+18.7</td><td class="n">—</td><td class="n">same</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============================================================ 7 -->
+<section id="rigor">
+  <h2><span class="sn">07</span>How we checked the results</h2>
+  <ul class="tight">
+    <li><strong>Paired statistics.</strong> Every comparison uses the same frames and an exact McNemar test <sup class="cite"><a href="#ref-33">[33]</a></sup>, reported per region and pooled. Claims that did not pass were not made.</li>
+    <li><strong>Grid-placement control.</strong> We rebuilt the r05 map with identical tiles but the grid shifted by 50 m. Accuracy moved from 74.3% to 62.5%. Where the tile centres fall relative to the flight line is worth up to ±12 points, a known effect of map sampling <sup class="cite"><a href="#ref-37">[37]</a></sup>. Since then, maps of different tile size are compared only with their tile centres aligned, and one earlier claim (exact rotation beats 90° steps) was withdrawn.</li>
+    <li><strong>A data bug found and fixed.</strong> The r05 map uses a 100 m tile spacing, not the 125 m its name suggests. Maps built at the wrong spacing were deleted and rebuilt.</li>
+    <li><strong>Independent cross-checks.</strong> The camera constant was measured with two unrelated encoders, and on frames outside the evaluation set.</li>
+    <li><strong>No test labels in the method.</strong> We did not copy one published method <sup class="cite"><a href="#ref-38">[38]</a></sup> because its alignment step is fitted on ground-truth test pairs.</li>
+    <li><strong>Reproducible.</strong> Every number comes from saved JSON/CSV outputs. The shipped command reproduces the experiment within 1–2 frames per region, and the new code has 14 unit tests.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 8 -->
+<section id="origins">
+  <h2><span class="sn">08</span>Where each idea came from</h2>
+  <p class="prose">For each method: the paper that suggested it, what that paper showed, and how we adapted it to a drone with a satellite map.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Our method</th><th>Inspired by</th><th>What the paper showed</th><th>How we adapted it</th></tr></thead>
+    <tbody>
+      <tr><td>Test general encoders on an unseen dataset</td><td>AnyLoc <sup class="cite"><a href="#ref-3">[3]</a></sup>, DINOv2 <sup class="cite"><a href="#ref-4">[4]</a></sup>, MegaLoc <sup class="cite"><a href="#ref-1">[1]</a></sup></td><td>foundation features work across environments without retraining</td><td>benchmarked 10 encoders zero-shot on UAV-VisLoc</td></tr>
+      <tr><td>Heading alignment</td><td>AnyVisLoc <sup class="cite"><a href="#ref-19">[19]</a></sup>, FoundLoc <sup class="cite"><a href="#ref-20">[20]</a></sup>, Kinnari et al. <sup class="cite"><a href="#ref-23">[23]</a></sup></td><td>a 60° heading error costs 25.7 points; north-aligned frames make retrieval work</td><td>rotate each frame by the logged heading; 1 encode instead of 4</td></tr>
+      <tr><td>Domain centering</td><td>Suzuki et al. <sup class="cite"><a href="#ref-26">[26]</a></sup>, test-time reference sets <sup class="cite"><a href="#ref-27">[27]</a></sup></td><td>centering removes hub vectors; the map can be used at test time</td><td>subtract the map mean and the flight's running mean</td></tr>
+      <tr><td>IMU search window</td><td>STHN <sup class="cite"><a href="#ref-22">[22]</a></sup>, NGPS <sup class="cite"><a href="#ref-21">[21]</a></sup>, FoundLoc <sup class="cite"><a href="#ref-20">[20]</a></sup></td><td>search only around the last known or VIO-predicted position</td><td>3σ window around the prior; σ from the filter</td></tr>
+      <tr><td>Encoder ensemble</td><td>Multi-Process Fusion <sup class="cite"><a href="#ref-24">[24]</a></sup>, Waheed et al. <sup class="cite"><a href="#ref-25">[25]</a></sup></td><td>complementary place-recognition methods combined beat each one alone</td><td>average the cosine scores of three differently trained encoders</td></tr>
+      <tr><td>Top-5 fusion</td><td>FoundLoc <sup class="cite"><a href="#ref-20">[20]</a></sup></td><td>cluster retrieved positions and keep the largest cluster</td><td>score-weighted 150 m clustering of the top-5</td></tr>
+      <tr><td>Height above ground → scale</td><td>Altitude-adaptive localization <sup class="cite"><a href="#ref-28">[28]</a></sup>, SUES-200 <sup class="cite"><a href="#ref-17">[17]</a></sup>, scale-aware CVGL <sup class="cite"><a href="#ref-29">[29]</a></sup>, Copernicus DEM <sup class="cite"><a href="#ref-18">[18]</a></sup></td><td>scale normalization by altitude gained 41.5 points; accuracy depends on height</td><td>barometer + terrain model + camera constant; crop only above 1.25× mismatch</td></tr>
+      <tr><td>Trajectory filter</td><td>Solà <sup class="cite"><a href="#ref-30">[30]</a></sup>, FoundLoc <sup class="cite"><a href="#ref-20">[20]</a></sup>, NGPS <sup class="cite"><a href="#ref-21">[21]</a></sup></td><td>error-state filtering of IMU with absolute fixes</td><td>15-state ESKF with a χ² outlier gate</td></tr>
+      <tr><td>Statistics</td><td>Dietterich <sup class="cite"><a href="#ref-33">[33]</a></sup></td><td>McNemar's test for comparing two methods on the same test set</td><td>exact paired tests per region and pooled</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============================================================ 9 -->
+<section id="hardware">
+  <h2><span class="sn">09</span>Running it on the drone</h2>
+  <p class="prose">With the IMU bridging the gaps, about one visual fix per second is enough: at 15 m/s the drone flies 15 m between fixes. Latencies below are projections from published TensorRT benchmarks, not measurements.</p>
+  <div class="table-wrap"><table>
+    <caption>Projected per-fix latency with TensorRT FP16. Prices are 2026 module list prices; a carrier board adds roughly $100–300.</caption>
+    <thead><tr><th>Board</th><th class="n">Price</th><th class="n">Ensemble (173 GMAC)</th><th class="n">MegaLoc alone</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>Jetson Nano (original)</td><td class="n">$199</td><td class="n">≈ 2 s</td><td class="n">≈ 0.5 s</td><td>end-of-life; cannot run our software stack</td></tr>
+      <tr><td>Orin Nano 4 GB Super</td><td class="n">$349</td><td class="n">≈ 0.35 s</td><td class="n">≈ 0.1 s</td><td>works; memory is tight</td></tr>
+      <tr class="em"><td>Orin Nano 8 GB Super</td><td class="n">$399</td><td class="n">≈ 0.2 s (≈ 5/s)</td><td class="n">≈ 55 ms</td><td>recommended</td></tr>
+      <tr><td>Orin NX 16 GB</td><td class="n">$899</td><td class="n">≈ 0.13 s</td><td class="n">≈ 35 ms</td><td>margin for ensemble + matcher + odometry</td></tr>
+      <tr><td>AGX Orin 64 GB</td><td class="n">$2,999</td><td class="n">≈ 0.1 s</td><td class="n">≈ 28 ms</td><td>more than needed; heavy for a small drone</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">The altitude crop keeps the cost at one encode per frame; the blind three-scale search it replaces needed three. Visual-inertial odometry on Jetson boards is documented by Jeon et al. <sup class="cite"><a href="#ref-39">[39]</a></sup>.</p>
+</section>
+
+<!-- ============================================================ 10 -->
+<section id="next">
+  <h2><span class="sn">10</span>Next steps</h2>
+  <ol class="tight">
+    <li><strong>Tighter evaluation.</strong> Denser tile spacing (50 m) to remove grid luck, and all 11 UAV-VisLoc regions instead of 4.</li>
+    <li><strong>Ship the best pipeline</strong> (MegaLoc + heading + flight centering + gated altitude crop) as the default in the localizer and the GUI.</li>
+    <li><strong>Learned matcher for re-ranking</strong> (LightGlue, GIM, MatchAnything, XFeat) for metre-level positions and a trustworthy confidence.</li>
+    <li><strong>Robust fusion:</strong> a particle filter or trajectory consensus in front of the Kalman filter, tested on sequences with a real IMU.</li>
+    <li><strong>More encoders, then compress:</strong> CAMP and DINOv3-SAT; then distill the ensemble into one small model for the Jetson.</li>
+    <li><strong>Hardware:</strong> buy an Orin Nano 8 GB Super, export to TensorRT and measure.</li>
+    <li><strong>Our own flights</strong> over the target area with logged camera, IMU, barometer and RTK ground truth.</li>
+  </ol>
+</section>
+
+<!-- ============================================================ 11 -->
+<section id="refs" class="refs">
+  <h2><span class="sn">11</span>References</h2>
+  <ol>
+    <li id="ref-1">G. Berton, C. Masone. <em>MegaLoc: One Retrieval to Place Them All.</em> CVPR Workshops 2025. <a href="https://arxiv.org/abs/2502.17237">arXiv:2502.17237</a></li>
+    <li id="ref-2">Y. Ji et al. <em>Game4Loc: A UAV Geo-Localization Benchmark from Game Data.</em> AAAI 2025. <a href="https://arxiv.org/abs/2409.16925">arXiv:2409.16925</a></li>
+    <li id="ref-3">N. Keetha et al. <em>AnyLoc: Towards Universal Visual Place Recognition.</em> IEEE RA-L 2023. <a href="https://arxiv.org/abs/2308.00688">arXiv:2308.00688</a></li>
+    <li id="ref-4">M. Oquab et al. <em>DINOv2: Learning Robust Visual Features without Supervision.</em> TMLR 2024. <a href="https://arxiv.org/abs/2304.07193">arXiv:2304.07193</a></li>
+    <li id="ref-5">O. Siméoni et al. <em>DINOv3.</em> 2025. <a href="https://arxiv.org/abs/2508.10104">arXiv:2508.10104</a></li>
+    <li id="ref-6"><em>InfoGeo: Information-Theoretic Object-Centric Learning for Cross-View Generalizable UAV Geo-Localization.</em> ICML 2026. <a href="https://arxiv.org/abs/2605.07099">arXiv:2605.07099</a></li>
+    <li id="ref-7">M. Dai, E. Zheng, Z. Feng, J. Zhuang, W. Yang. <em>Vision-Based UAV Self-Positioning in Low-Altitude Urban Environments</em> (DenseUAV). IEEE TIP 2024. <a href="https://arxiv.org/abs/2201.09201">arXiv:2201.09201</a></li>
+    <li id="ref-8">F. Deuser, K. Habel, N. Oswald. <em>Sample4Geo: Hard Negative Sampling for Cross-View Geo-Localisation.</em> ICCV 2023. <a href="https://arxiv.org/abs/2303.11851">arXiv:2303.11851</a></li>
+    <li id="ref-9">A. Ali-bey, B. Chaib-draa, P. Giguère. <em>MixVPR: Feature Mixing for Visual Place Recognition.</em> WACV 2023. <a href="https://arxiv.org/abs/2303.02190">arXiv:2303.02190</a></li>
+    <li id="ref-10">G. Berton, C. Masone, B. Caputo. <em>Rethinking Visual Geo-localization for Large-Scale Applications</em> (CosPlace). CVPR 2022. <a href="https://arxiv.org/abs/2204.02287">arXiv:2204.02287</a></li>
+    <li id="ref-11">G. Berton, G. Trivigno, B. Caputo, C. Masone. <em>EigenPlaces: Training Viewpoint Robust Models for Visual Place Recognition.</em> ICCV 2023. <a href="https://arxiv.org/abs/2308.10832">arXiv:2308.10832</a></li>
+    <li id="ref-12">A. Ali-bey, B. Chaib-draa, P. Giguère. <em>BoQ: A Place is Worth a Bag of Learnable Queries.</em> CVPR 2024. <a href="https://arxiv.org/abs/2405.07364">arXiv:2405.07364</a></li>
+    <li id="ref-13">S. Izquierdo, J. Civera. <em>Optimal Transport Aggregation for Visual Place Recognition</em> (SALAD, used inside MegaLoc). CVPR 2024. <a href="https://arxiv.org/abs/2311.15937">arXiv:2311.15937</a></li>
+    <li id="ref-14">R. Arandjelović et al. <em>NetVLAD: CNN Architecture for Weakly Supervised Place Recognition.</em> CVPR 2016. <a href="https://arxiv.org/abs/1511.07247">arXiv:1511.07247</a></li>
+    <li id="ref-15">W. Xu et al. <em>UAV-VisLoc: A Large-scale Dataset for UAV Visual Localization.</em> 2024. <a href="https://arxiv.org/abs/2405.11936">arXiv:2405.11936</a></li>
+    <li id="ref-16">Z. Zheng, Y. Wei, Y. Yang. <em>University-1652: A Multi-view Multi-source Benchmark for Drone-based Geo-localization.</em> ACM Multimedia 2020. <a href="https://arxiv.org/abs/2002.12186">arXiv:2002.12186</a></li>
+    <li id="ref-17">R. Zhu et al. <em>SUES-200: A Multi-height Multi-scene Cross-view Image Benchmark Across Drone and Satellite.</em> IEEE TCSVT 2023. <a href="https://arxiv.org/abs/2204.10704">arXiv:2204.10704</a></li>
+    <li id="ref-18">ESA / Airbus. <em>Copernicus DEM Product Handbook</em> (GLO-30: &lt; 4 m absolute vertical accuracy, LE90). <a href="https://dataspace.copernicus.eu/sites/default/files/media/files/2024-06/geo1988-copernicusdem-spe-002_producthandbook_i5.0.pdf">dataspace.copernicus.eu</a></li>
+    <li id="ref-19"><em>Exploring the Best Way for UAV Visual Localization under Low-altitude Multi-view Observation Condition: a Benchmark</em> (AnyVisLoc). 2025. <a href="https://arxiv.org/abs/2503.10692">arXiv:2503.10692</a></li>
+    <li id="ref-20">Y. He, I. Cisneros, N. Keetha et al. <em>FoundLoc: Vision-based Onboard Aerial Localization in the Wild.</em> 2023. <a href="https://arxiv.org/abs/2310.16299">arXiv:2310.16299</a></li>
+    <li id="ref-21"><em>NGPS: GPS-Denied Aerial Geo-Localization and 2.5D Reconstruction via Deep Satellite Image Matching and Multi-Rate Sensor Fusion.</em> 2026. <a href="https://arxiv.org/abs/2607.18936">arXiv:2607.18936</a></li>
+    <li id="ref-22">J. Xiao et al. <em>STHN: Deep Homography Estimation for UAV Thermal Geo-localization with Satellite Imagery.</em> 2024. <a href="https://arxiv.org/abs/2405.20470">arXiv:2405.20470</a></li>
+    <li id="ref-23">J. Kinnari, F. Verdoja, V. Kyrki. <em>Season-invariant GNSS-denied Visual Localization for UAVs.</em> IEEE RA-L 2022. <a href="https://arxiv.org/abs/2110.01967">arXiv:2110.01967</a></li>
+    <li id="ref-24">S. Hausler, A. Jacobson, M. Milford. <em>Multi-Process Fusion: Visual Place Recognition Using Multiple Image Processing Methods.</em> IEEE RA-L 4(2), 2019. <a href="https://arxiv.org/abs/1903.03305">arXiv:1903.03305</a></li>
+    <li id="ref-25">M. Waheed, M. Milford, K. McDonald-Maier, S. Ehsan. <em>Improving Visual Place Recognition Performance by Maximising Complementarity.</em> IEEE RA-L 6(3), 2021. <a href="https://arxiv.org/abs/2102.08416">arXiv:2102.08416</a></li>
+    <li id="ref-26">I. Suzuki, K. Hara, M. Shimbo, M. Saerens, K. Fukumizu. <em>Centering Similarity Measures to Reduce Hubs.</em> EMNLP 2013. <a href="https://aclanthology.org/D13-1058/">aclanthology.org/D13-1058</a></li>
+    <li id="ref-27"><em>The Overlooked Value of Test-time Reference Sets in Visual Place Recognition.</em> 2025. <a href="https://arxiv.org/abs/2510.03751">arXiv:2510.03751</a></li>
+    <li id="ref-28"><em>Altitude-Adaptive Vision-Only Geo-Localization for UAVs in GPS-Denied Environments.</em> 2026. <a href="https://arxiv.org/abs/2602.23872">arXiv:2602.23872</a></li>
+    <li id="ref-29"><em>Scale-Aware UAV-to-Satellite Cross-View Geo-Localization: A Semantic Geometric Approach.</em> 2026. <a href="https://arxiv.org/abs/2603.07535">arXiv:2603.07535</a></li>
+    <li id="ref-30">J. Solà. <em>Quaternion Kinematics for the Error-State Kalman Filter.</em> 2017. <a href="https://arxiv.org/abs/1711.02508">arXiv:1711.02508</a></li>
+    <li id="ref-31">R. Jurevičius, V. Marcinkevičius, J. Šeibokas. <em>Robust GNSS-Denied Localization for UAV Using Particle Filter and Visual Odometry.</em> Machine Vision and Applications 2019. <a href="https://arxiv.org/abs/1910.12121">arXiv:1910.12121</a></li>
+    <li id="ref-32"><em>NaviLoc: Trajectory-Level Visual Localization for GNSS-Denied UAV Navigation.</em> Drones 10(2):97, 2026. <a href="https://www.mdpi.com/2504-446X/10/2/97">mdpi.com</a></li>
+    <li id="ref-33">T. G. Dietterich. <em>Approximate Statistical Tests for Comparing Supervised Classification Learning Algorithms.</em> Neural Computation 10, 1998.</li>
+    <li id="ref-34">P. Lindenberger, P.-E. Sarlin, M. Pollefeys. <em>LightGlue: Local Feature Matching at Light Speed.</em> ICCV 2023. <a href="https://arxiv.org/abs/2306.13643">arXiv:2306.13643</a></li>
+    <li id="ref-35">X. Shen et al. <em>GIM: Learning Generalizable Image Matcher from Internet Videos.</em> ICLR 2024. <a href="https://arxiv.org/abs/2402.11095">arXiv:2402.11095</a></li>
+    <li id="ref-36"><em>MatchAnything: Universal Cross-Modality Image Matching with Large-Scale Pre-Training.</em> 2025. <a href="https://arxiv.org/abs/2501.07556">arXiv:2501.07556</a></li>
+    <li id="ref-37"><em>Automatic Map Density Selection for Locally-Performant Visual Place Recognition.</em> 2026. <a href="https://arxiv.org/abs/2602.21473">arXiv:2602.21473</a></li>
+    <li id="ref-38"><em>VFM-Loc: Training-Free Cross-View Geo-Localization via Aligning Discriminative Visual Hierarchies.</em> 2026. <a href="https://arxiv.org/abs/2603.13855">arXiv:2603.13855</a></li>
+    <li id="ref-39">J. Jeon, S. Jung, E. Lee, D. Choi, H. Myung. <em>Run Your Visual-Inertial Odometry on NVIDIA Jetson: Benchmark Tests on a Micro Aerial Vehicle.</em> IEEE RA-L 2021. <a href="https://arxiv.org/abs/2103.01655">arXiv:2103.01655</a></li>
+  </ol>
+</section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function txt(parent, x, y, s, cls, anchor) {
+    var t = el("text", { x: x, y: y, "class": cls || "lab", "text-anchor": anchor || "start" }, parent);
+    t.textContent = s;
+    return t;
+  }
+  function tooltip(chart) {
+    var tip = document.createElement("div");
+    tip.className = "tip"; tip.hidden = true;
+    chart.appendChild(tip);
+    return function bind(node, html) {
+      node.addEventListener("pointerenter", function () { tip.innerHTML = html; tip.hidden = false; });
+      node.addEventListener("pointermove", function (ev) {
+        var r = chart.getBoundingClientRect();
+        var x = ev.clientX - r.left + 14, y = ev.clientY - r.top + 14;
+        if (x + 270 > r.width) x = ev.clientX - r.left - 270;
+        tip.style.left = Math.max(4, x) + "px"; tip.style.top = y + "px";
+      });
+      node.addEventListener("pointerleave", function () { tip.hidden = true; });
+    };
+  }
+
+  /* ---------- 1. accuracy vs compute (scatter, log x) ---------- */
+  (function () {
+    var svg = document.getElementById("svg-scatter"); if (!svg) return;
+    var bind = tooltip(document.getElementById("chart-scatter"));
+    var W = 760, H = 430, L = 64, R = 730, T = 20, B = 370;
+    var x0 = Math.log10(3), x1 = Math.log10(250), y0 = 20, y1 = 90;
+    var X = function (g) { return L + (Math.log10(g) - x0) / (x1 - x0) * (R - L); };
+    var Y = function (v) { return B - (v - y0) / (y1 - y0) * (B - T); };
+    for (var v = 20; v <= 90; v += 10) {
+      el("line", { x1: L, x2: R, y1: Y(v), y2: Y(v), "class": v === 20 ? "baseline" : "gridline" }, svg);
+      txt(svg, L - 8, Y(v) + 4, v + "%", "axis", "end");
+    }
+    [5, 10, 20, 50, 100, 200].forEach(function (g) {
+      el("line", { x1: X(g), x2: X(g), y1: T, y2: B, "class": "gridline" }, svg);
+      txt(svg, X(g), B + 18, String(g), "axis", "middle");
+    });
+    txt(svg, (L + R) / 2, B + 42, "Compute per image (GMAC, log scale)", "axis", "middle");
+    var yl = txt(svg, 16, (T + B) / 2, "Top-1 within 100 m, r05", "axis", "middle");
+    yl.setAttribute("transform", "rotate(-90 16 " + (T + B) / 2 + ")");
+    var pts = [
+      ["DenseUAV-ViT", 4.2, 32.6, 10, 4, "start"],
+      ["AnyLoc-lite", 21.9, 44.4, -10, 4, "end"],
+      ["DINOv3-B", 37.4, 47.2, -10, 16, "end"],
+      ["MegaLoc", 45.9, 56.9, -10, 4, "end"],
+      ["Game4Loc", 49.3, 59.7, 10, -6, "start"],
+      ["AnyLoc-L", 77.8, 49.3, 10, 4, "start"],
+      ["AnyLoc-sat", 82.4, 28.5, 10, 4, "start"],
+      ["InfoGeo-GTA", 91.7, 63.9, 10, 4, "start"],
+      ["InfoGeo-dense", 91.7, 72.2, -10, 4, "end"],
+      ["Ensemble (3)", 173, 80.6, -10, -10, "end", true]
+    ];
+    pts.forEach(function (p) {
+      var cx = X(p[1]), cy = Y(p[2]);
+      el("circle", { cx: cx, cy: cy, r: 6, "class": (p[6] ? "pt2" : "pt1") + " ring" }, svg);
+      txt(svg, cx + p[3], cy + p[4], p[0], "lab", p[5]);
+      var hit = el("circle", { cx: cx, cy: cy, r: 14, "class": "hit" }, svg);
+      bind(hit, "<strong>" + p[0] + "</strong><br>" + p[1] + " GMAC · " + p[2].toFixed(1) + "% on r05");
+    });
+  })();
+
+  /* ---------- 2. IMU search window (lines) ---------- */
+  (function () {
+    var svg = document.getElementById("svg-window"); if (!svg) return;
+    var bind = tooltip(document.getElementById("chart-window"));
+    var L = 64, R = 690, T = 20, B = 340;
+    var cats = ["global", "σ 400 m", "σ 200 m", "σ 100 m", "σ 50 m"];
+    var X = function (i) { return L + 40 + i * ((R - L - 80) / (cats.length - 1)); };
+    var Y = function (v) { return B - v / 100 * (B - T); };
+    for (var v = 0; v <= 100; v += 20) {
+      el("line", { x1: L, x2: R, y1: Y(v), y2: Y(v), "class": v === 0 ? "baseline" : "gridline" }, svg);
+      txt(svg, L - 8, Y(v) + 4, v + "%", "axis", "end");
+    }
+    cats.forEach(function (c, i) { txt(svg, X(i), B + 20, c, "axis", "middle"); });
+    txt(svg, (L + R) / 2, B + 46, "Uncertainty of the IMU-predicted position (1σ); window radius = 3σ", "axis", "middle");
+    var series = [
+      { name: "r05 · AnyLoc-L", cls: 1, v: [49.3, 50.0, 54.9, 61.8, 72.9] },
+      { name: "r06 · DenseUAV-ViT", cls: 2, v: [27.8, 29.9, 36.1, 46.5, 71.5] },
+      { name: "r10 · DenseUAV-ViT", cls: 3, v: [18.8, 20.8, 24.3, 37.5, 63.2] },
+      { name: "prior position alone", cls: "p", v: [null, 2.1, 6.2, 36.8, 86.1] }
+    ];
+    series.forEach(function (s) {
+      var d = "", started = false;
+      s.v.forEach(function (val, i) {
+        if (val === null) return;
+        d += (started ? " L" : "M") + X(i).toFixed(1) + " " + Y(val).toFixed(1); started = true;
+      });
+      el("path", { d: d, "class": "ser" + s.cls }, svg);
+    });
+    series.forEach(function (s) {
+      s.v.forEach(function (val, i) {
+        if (val === null) return;
+        el("circle", { cx: X(i), cy: Y(val), r: 4.5, "class": "pt" + s.cls + " ring" }, svg);
+        var hit = el("circle", { cx: X(i), cy: Y(val), r: 12, "class": "hit" }, svg);
+        bind(hit, "<strong>" + s.name + "</strong><br>" + cats[i] + ": " + val.toFixed(1) + "%");
+      });
+    });
+    // direct labels at the left end (values are well separated there)
+    txt(svg, X(0) - 10, Y(49.3) + 4, "r05", "lab", "end");
+    txt(svg, X(0) - 10, Y(27.8) + 4, "r06", "lab", "end");
+    txt(svg, X(0) - 10, Y(18.8) + 4, "r10", "lab", "end");
+    txt(svg, X(4) + 10, Y(86.1) + 4, "prior alone", "lab", "start");
+  })();
+
+  /* ---------- 3. progress ladder (horizontal bars) ---------- */
+  (function () {
+    var svg = document.getElementById("svg-ladder"); if (!svg) return;
+    var bind = tooltip(document.getElementById("chart-ladder"));
+    var rows = [
+      ["MegaLoc, 4-rotation search", 56.9, "baseline, 184 GMAC per frame"],
+      ["+ heading (1 rotation)", 68.1, "quarter of the compute"],
+      ["+ flight-mean centering", 74.3, "MegaLoc, 46 GMAC per frame"],
+      ["3-encoder ensemble + heading", 85.4, "MegaLoc + Game4Loc + AnyLoc-L, 173 GMAC"],
+      ["+ top-5 geo-fusion", 91.7, "fused position, same compute"]
+    ];
+    var L = 250, R = 700, T = 14, rowH = 46, barH = 22;
+    var X = function (v) { return L + v / 100 * (R - L); };
+    var B = T + rows.length * rowH;
+    [0, 25, 50, 75, 100].forEach(function (v) {
+      el("line", { x1: X(v), x2: X(v), y1: T - 4, y2: B, "class": v === 0 ? "baseline" : "gridline" }, svg);
+      txt(svg, X(v), B + 18, v + "%", "axis", "middle");
+    });
+    rows.forEach(function (r, i) {
+      var y = T + i * rowH + (rowH - barH) / 2;
+      var w = X(r[1]) - L, rad = 4;
+      var d = "M" + L + " " + y + " H" + (L + w - rad) + " Q" + (L + w) + " " + y + " " + (L + w) + " " + (y + rad) +
+              " V" + (y + barH - rad) + " Q" + (L + w) + " " + (y + barH) + " " + (L + w - rad) + " " + (y + barH) + " H" + L + " Z";
+      el("path", { d: d, "class": "bar" + (i >= 3 ? " hi" : "") }, svg);
+      txt(svg, L - 12, y + barH / 2 + 5, r[0], "lab", "end");
+      txt(svg, L + w + 8, y + barH / 2 + 5, r[1].toFixed(1) + "%", "val", "start");
+      var hit = el("rect", { x: 0, y: T + i * rowH, width: 760, height: rowH, "class": "hit" }, svg);
+      bind(hit, "<strong>" + r[0] + "</strong><br>" + r[1].toFixed(1) + "% · " + r[2]);
+    });
+    txt(svg, (L + R) / 2, B + 40, "Top-1 within 100 m, region 05 (orange: ensemble)", "axis", "middle");
+  })();
+})();
+</script>
+
+</body>
+</html>

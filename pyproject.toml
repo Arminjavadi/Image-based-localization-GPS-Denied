@@ -23,6 +23,21 @@ dependencies = [
   "timm>=1.0.0",
 ]
 
+[project.optional-dependencies]
+# Learned matchers for the geometric re-ranking stage (avl/rerank.py). The
+# default sift/orb/akaze backends need nothing beyond OpenCV.
+rerank = [
+  "lightglue @ git+https://github.com/cvg/LightGlue.git",
+  "kornia>=0.7.0",
+]
+
+# Terrain model for height-above-ground scale normalisation (avl/terrain.py):
+# decodes the Copernicus GLO-30 DEM GeoTIFFs. Only needed with --scale-from-agl.
+terrain = [
+  "tifffile>=2024.1.0",
+  "imagecodecs>=2024.1.0",
+]
+
 [project.scripts]
 avl-mission-console = "avl.light_gui_app:main"
 

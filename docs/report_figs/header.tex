@@ -1,0 +1,68 @@
+\usepackage{fontspec}
+\setmainfont{DejaVu Serif}[Scale=0.92]
+\setsansfont{DejaVu Sans}[Scale=0.90]
+\setmonofont{DejaVu Sans Mono}[Scale=0.78]
+
+\usepackage{geometry}
+\geometry{a4paper,top=2.3cm,bottom=2.3cm,left=2.3cm,right=2.3cm}
+
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf,skip=5pt}
+\usepackage{float}
+\usepackage[dvipsnames,table]{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\setlist{itemsep=1pt,topsep=3pt,parsep=0pt}
+
+\definecolor{avlblue}{HTML}{2B6CB0}
+\definecolor{avlgrey}{HTML}{4A5568}
+\definecolor{avlteal}{HTML}{2C7A7B}
+\definecolor{boxbg}{HTML}{F0F4F8}
+\definecolor{boxrule}{HTML}{2B6CB0}
+
+\titleformat{\section}{\sffamily\Large\bfseries\color{avlblue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\sffamily\large\bfseries\color{avlgrey}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\sffamily\normalsize\bfseries\color{avlgrey}}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{16pt}{7pt}
+\titlespacing*{\subsection}{0pt}{12pt}{5pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\sffamily\color{avlgrey}Absolute Visual Localisation — Dataset Coverage and Real-Time Feasibility}
+\fancyhead[R]{\footnotesize\sffamily\color{avlgrey}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{avlblue}\leaders\hrule height \headrulewidth\hfill}}
+
+\usepackage[most]{tcolorbox}
+\newtcolorbox{keybox}[1][]{colback=boxbg,colframe=boxrule,boxrule=0.9pt,
+  left=7pt,right=7pt,top=6pt,bottom=6pt,arc=2pt,#1}
+
+% pandoc blockquote -> highlighted key-finding box
+\renewenvironment{quote}{\begin{keybox}}{\end{keybox}}
+
+\usepackage{setspace}
+\setstretch{1.06}
+
+\let\oldtabular\tabular
+\renewcommand{\tabular}{\scriptsize\oldtabular}
+\let\oldlongtable\longtable
+\def\longtable{\scriptsize\oldlongtable}
+
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=avlblue,urlcolor=avlteal,citecolor=avlteal,
+  pdftitle={Absolute Visual Localisation: Dataset Coverage and Real-Time Embedded Feasibility}}
+
+\setkeys{Gin}{width=\linewidth}
+\floatplacement{figure}{htbp}
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.75}
+\renewcommand{\textfraction}{0.06}
+\renewcommand{\floatpagefraction}{0.72}
+\setlength{\LTpre}{7pt}
+\setlength{\LTpost}{9pt}
+
+\captionsetup[table]{labelformat=empty,justification=raggedright,singlelinecheck=false}

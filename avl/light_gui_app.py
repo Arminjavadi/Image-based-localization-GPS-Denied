@@ -11,8 +11,11 @@ from PySide6.QtCore import QProcess, QTimer, Qt
 from PySide6.QtGui import QCloseEvent, QFont, QImage, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -34,6 +37,8 @@ try:
 except ImportError:
     Image = None
     ImageOps = None
+
+from avl.rerank import DEFAULT_BACKEND, OPTIONAL_BACKEND_HINT, RERANK_BACKENDS
 
 
 def find_project_root() -> Path:
@@ -156,6 +161,27 @@ class MatchCard(QWidget):
         preview = ImagePreviewLabel("Image unavailable", 198, 142)
         preview.set_path(match.get("image_path"))
 
+        # Only present when the geometric stage ran on this query.
+        rerank = match.get("rerank") or {}
+        verification: QLabel | None = None
+        if rerank:
+            inliers = rerank.get("inliers", 0)
+            matches_found = rerank.get("matches", 0)
+            verified = bool(rerank.get("verified"))
+            previous = match.get("retrieval_rank")
+            movement = ""
+            if isinstance(previous, int) and isinstance(rank, int) and previous != rank:
+                movement = f" · {'↑' if previous > rank else '↓'} was #{previous}"
+            verification = QLabel(
+                f"{'✓' if verified else '✗'} {inliers}/{matches_found} inliers{movement}"
+            )
+            verification.setObjectName("matchVerified" if verified else "matchRejected")
+            verification.setWordWrap(True)
+            verification.setToolTip(
+                "RANSAC inliers between this reference tile and the query. "
+                "A verified candidate shares a consistent homography with the query."
+            )
+
         image_path_text = str(match.get("image_path") or "")
         image_path = Path(image_path_text) if image_path_text else None
         image_name = QLabel(image_path.name if image_path is not None else "Unknown image")
@@ -181,6 +207,8 @@ class MatchCard(QWidget):
         identifier.setObjectName("matchMeta")
 
         layout.addWidget(heading)
+        if verification is not None:
+            layout.addWidget(verification)
         layout.addWidget(preview)
         layout.addWidget(image_name)
         layout.addWidget(path_label)
@@ -248,7 +276,6 @@ class LightAVLConsole(QMainWindow):
     def _build_controls(self) -> QWidget:
         panel = QWidget()
         panel.setObjectName("panel")
-        panel.setFixedWidth(430)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
@@ -297,6 +324,8 @@ class LightAVLConsole(QMainWindow):
             grid.addWidget(widget, row, 1)
         layout.addLayout(grid)
 
+        layout.addWidget(self._build_rerank_controls())
+
         self.mode_tabs = QTabWidget()
         self.mode_tabs.setObjectName("modeTabs")
         self.mode_tabs.addTab(self._build_interactive_controls(), "Test & Visualize")
@@ -310,11 +339,119 @@ class LightAVLConsole(QMainWindow):
         self.log = QTextEdit()
         self.log.setObjectName("log")
         self.log.setReadOnly(True)
+        self.log.setMinimumHeight(120)
         self.log.setPlaceholderText("Offline build, online query, and benchmark output appears here.")
         layout.addWidget(self.log, 1)
 
         self._sync_dimensions()
+
+        # The column holds more rows than a short window can show, so it scrolls
+        # rather than compressing every control into an unreadable stack.
+        scroller = QScrollArea()
+        scroller.setObjectName("controlsScroll")
+        scroller.setWidgetResizable(True)
+        scroller.setFrameShape(QFrame.Shape.NoFrame)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroller.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroller.setFixedWidth(448)
+        scroller.setWidget(panel)
+        return scroller
+
+    def _build_rerank_controls(self) -> QWidget:
+        """Second-stage geometric verification of the retrieval short-list."""
+        panel = QFrame()
+        panel.setObjectName("rerankPanel")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        self.rerank_enabled = QCheckBox("Geometric re-ranking")
+        self.rerank_enabled.setObjectName("rerankToggle")
+        self.rerank_enabled.setToolTip(
+            "Verify the top candidates with local features + RANSAC and re-order "
+            "them by inlier count before fusing a position."
+        )
+        self.rerank_enabled.toggled.connect(self._rerank_toggled)
+        layout.addWidget(self.rerank_enabled)
+
+        self.rerank_backend = QComboBox()
+        for backend in RERANK_BACKENDS:
+            label = backend
+            if backend in OPTIONAL_BACKEND_HINT:
+                label = f"{backend}  (needs {OPTIONAL_BACKEND_HINT[backend].split()[-1]})"
+            self.rerank_backend.addItem(label, backend)
+        self.rerank_backend.setCurrentIndex(RERANK_BACKENDS.index(DEFAULT_BACKEND))
+
+        self.rerank_candidates = self._spin(1, 200, 10)
+        self.rerank_candidates.setToolTip(
+            "How deep the short-list handed to verification is. Deeper finds more "
+            "true matches that retrieval ranked low, and costs one match per tile."
+        )
+        self.rerank_min_inliers = self._spin(0, 500, 12)
+        self.rerank_min_inliers.setToolTip(
+            "RANSAC inliers a candidate needs before it counts as verified."
+        )
+        self.rerank_max_features = self._spin(256, 8192, 2048)
+        self.rerank_max_features.setToolTip("Keypoint budget per image.")
+
+        self.rerank_blend = QDoubleSpinBox()
+        self.rerank_blend.setRange(0.0, 1.0)
+        self.rerank_blend.setSingleStep(0.1)
+        self.rerank_blend.setDecimals(2)
+        self.rerank_blend.setValue(0.5)
+        self.rerank_blend.setToolTip(
+            "0 keeps the descriptor order, 1 ranks purely on geometry, 0.5 blends both."
+        )
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(6)
+        rerank_controls = [
+            ("Matcher", self.rerank_backend),
+            ("Candidates", self.rerank_candidates),
+            ("Min inliers", self.rerank_min_inliers),
+            ("Geometry weight", self.rerank_blend),
+            ("Max features", self.rerank_max_features),
+        ]
+        for row, (label, widget) in enumerate(rerank_controls):
+            grid.addWidget(self._label(label), row, 0)
+            grid.addWidget(widget, row, 1)
+        layout.addLayout(grid)
+
+        self.rerank_hint = QLabel(
+            "Off — matches are ranked by descriptor similarity alone."
+        )
+        self.rerank_hint.setObjectName("rerankHint")
+        self.rerank_hint.setWordWrap(True)
+        layout.addWidget(self.rerank_hint)
+
+        self._rerank_widgets = [widget for _, widget in rerank_controls]
+        self._rerank_toggled(False)
         return panel
+
+    def _rerank_toggled(self, enabled: bool) -> None:
+        for widget in getattr(self, "_rerank_widgets", []):
+            widget.setEnabled(enabled)
+        if enabled:
+            self.rerank_hint.setText(
+                "On — the top candidates are verified with local features; the "
+                "stage adds latency but usually fixes Recall@1."
+            )
+        else:
+            self.rerank_hint.setText(
+                "Off — matches are ranked by descriptor similarity alone."
+            )
+
+    def _rerank_settings(self) -> dict[str, Any]:
+        """Query-time re-ranking payload; the worker applies it without reloading."""
+        return {
+            "enabled": self.rerank_enabled.isChecked(),
+            "backend": self.rerank_backend.currentData(),
+            "candidates": self.rerank_candidates.value(),
+            "min_inliers": self.rerank_min_inliers.value(),
+            "max_features": self.rerank_max_features.value(),
+            "blend": self.rerank_blend.value(),
+        }
 
     def _build_interactive_controls(self) -> QWidget:
         page = QWidget()
@@ -386,13 +523,14 @@ class LightAVLConsole(QMainWindow):
             "build": MetricBox("FAISS build"),
             "query": MetricBox("Query feature"),
             "search": MetricBox("Search"),
+            "rerank": MetricBox("Re-rank"),
             "online": MetricBox("Online total"),
             "memory": MetricBox("Memory"),
             "quality": MetricBox("Quality"),
             "status": MetricBox("Run status"),
         }
         for index, metric in enumerate(self.metrics.values()):
-            metrics_layout.addWidget(metric, index // 4, index % 4)
+            metrics_layout.addWidget(metric, index // 3, index % 3)
         layout.addLayout(metrics_layout)
 
         self.result_tabs = QTabWidget()
@@ -632,6 +770,10 @@ class LightAVLConsole(QMainWindow):
             self.metadata_edit.text(),
             "--output",
             str(index_dir),
+            # this console picks the encoder and rotations itself; the recipe presets
+            # (heading, centering, altitude crop) need flight telemetry it does not have
+            "--preset",
+            "none",
             "--model",
             self.model.currentText(),
             "--descriptor-dim",
@@ -675,6 +817,7 @@ class LightAVLConsole(QMainWindow):
             "query": str(Path(self.query_edit.text()).expanduser().resolve()),
             "top_k": self.top_k.value(),
             "output_json": str(self.output_json),
+            "rerank": self._rerank_settings(),
         }
         self._set_action_buttons_enabled(False)
         if self._online_worker_matches_current_config():
@@ -740,6 +883,23 @@ class LightAVLConsole(QMainWindow):
             "--output-csv",
             str(self.output_csv),
         ]
+        rerank = self._rerank_settings()
+        if rerank["enabled"]:
+            args.extend(
+                [
+                    "--rerank",
+                    "--rerank-backend",
+                    str(rerank["backend"]),
+                    "--rerank-candidates",
+                    str(rerank["candidates"]),
+                    "--rerank-min-inliers",
+                    str(rerank["min_inliers"]),
+                    "--rerank-max-features",
+                    str(rerank["max_features"]),
+                    "--rerank-blend",
+                    str(rerank["blend"]),
+                ]
+            )
         insertion = 3
         if self.base_edit.text().strip():
             args[insertion:insertion] = ["--base-dir", self.base_edit.text()]
@@ -878,6 +1038,19 @@ class LightAVLConsole(QMainWindow):
                     f"worker {float(event.get('end_to_end_ms', 0.0)):.1f} ms · "
                     f"feature + search {float(event.get('pipeline_ms', 0.0)):.1f} ms"
                 )
+            rerank_summary = event.get("rerank")
+            if rerank_summary:
+                if rerank_summary.get("error"):
+                    self.append_log(
+                        f"Re-ranking fell back to descriptor order: {rerank_summary['error']}"
+                    )
+                else:
+                    self.append_log(
+                        f"Re-ranked {rerank_summary.get('candidates')} candidates with "
+                        f"{rerank_summary.get('backend')} · "
+                        f"{rerank_summary.get('verified')} verified · "
+                        f"{float(event.get('rerank_ms') or 0.0):.1f} ms"
+                    )
             self.pending_online_request = None
             self.online_request_started_at = None
             self._set_action_buttons_enabled(True)
@@ -1150,6 +1323,21 @@ class LightAVLConsole(QMainWindow):
                 f"{fmt(online.get('search_queries_per_s'), ' q/s')}"
             ),
         )
+        rerank_ms = online.get("rerank_ms") or {}
+        rerank = online.get("rerank") or {}
+        rerank_run = self._first_rerank_summary(run)
+        if rerank_ms.get("mean") is None:
+            self.metrics["rerank"].set_value("off", "descriptor order only")
+        else:
+            verified = (rerank_run or {}).get("verified")
+            candidates = (rerank_run or {}).get("candidates", rerank.get("candidates"))
+            detail = f"{rerank.get('backend', '-')}"
+            if verified is not None:
+                detail += f" · {verified}/{candidates} verified"
+            elif candidates is not None:
+                detail += f" · {candidates} candidates"
+            self.metrics["rerank"].set_value(fmt(rerank_ms.get("mean"), " ms"), detail)
+
         self.metrics["online"].set_value(
             fmt(
                 online.get(
@@ -1159,8 +1347,9 @@ class LightAVLConsole(QMainWindow):
                 " ms",
             ),
             (
-                "request end-to-end · feature + search "
-                f"{fmt(online.get('encode_plus_search_ms_mean'), ' ms')}"
+                "request end-to-end · feature + search"
+                + (" + re-rank" if rerank_ms.get("mean") is not None else "")
+                + f" {fmt(online.get('encode_plus_search_ms_mean'), ' ms')}"
             ),
         )
         self.metrics["memory"].set_value(
@@ -1176,6 +1365,14 @@ class LightAVLConsole(QMainWindow):
             f"R@5 {fmt(recall_5, '', 3)} · R@10 {fmt(recall_10, '', 3)}",
         )
         self.metrics["status"].set_value("OK" if not run.get("error") else "ERROR", run.get("error") or "")
+
+    @staticmethod
+    def _first_rerank_summary(run: dict[str, Any]) -> dict[str, Any] | None:
+        for localization in run.get("localizations", []) or []:
+            summary = localization.get("rerank")
+            if summary:
+                return summary
+        return None
 
     def render_localizations(self, run: dict[str, Any]) -> None:
         self.localizations = run.get("localizations", [])
@@ -1337,6 +1534,23 @@ class LightAVLConsole(QMainWindow):
             QLabel#indexStatus {
                 font-size: 10px;
             }
+            QScrollArea#controlsScroll {
+                background: transparent;
+                border: none;
+            }
+            QFrame#rerankPanel {
+                background: #0b171a;
+                border: 1px solid #203a3e;
+                border-radius: 6px;
+            }
+            QCheckBox#rerankToggle {
+                color: #eef8f7;
+                font-weight: 800;
+            }
+            QLabel#rerankHint {
+                color: #8fb0ac;
+                font-size: 10px;
+            }
             QLabel#status {
                 background: #123a3d;
                 border: 1px solid #2dd4bf;
@@ -1406,6 +1620,21 @@ class LightAVLConsole(QMainWindow):
                 color: #5eead4;
                 font-size: 12px;
                 font-weight: 800;
+            }
+            QLabel#matchVerified,
+            QLabel#matchRejected {
+                font-size: 11px;
+                font-weight: 700;
+                border-radius: 4px;
+                padding: 2px 6px;
+            }
+            QLabel#matchVerified {
+                color: #062b21;
+                background: #34d399;
+            }
+            QLabel#matchRejected {
+                color: #f3d0d0;
+                background: #4a2020;
             }
             QLabel#matchName {
                 color: #f3fffd;

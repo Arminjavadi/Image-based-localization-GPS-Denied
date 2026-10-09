@@ -17,6 +17,38 @@ class SearchResult:
     scores: np.ndarray
 
 
+#: Config fields written next to the index, so a loaded index knows how it was built
+#: and which recipe (avl.pipeline) its queries must follow.
+SAVED_FIELDS = (
+    "model",
+    "descriptor_dim",
+    "cosplace_backbone",
+    "query_rotations",
+    "index_type",
+    "hnsw_m",
+    "hnsw_ef_construction",
+    "hnsw_ef_search",
+    "ivfpq_nlist",
+    "ivfpq_m",
+    "ivfpq_nbits",
+    "score_threshold",
+    "fusion_method",
+    "fusion_softmax_temp",
+    "fusion_cluster_radius_m",
+    "heading_mode",
+    "center_mode",
+    "center_warmup",
+    "scale_from_agl",
+    "camera_k",
+    "tile_m",
+    "agl_gate",
+    "min_agl_m",
+    "dem_dir",
+    "prior_k",
+    "query_crop",
+)
+
+
 class HashIndex:
     """
     FAISS-backed approximate nearest-neighbor index.
@@ -30,6 +62,8 @@ class HashIndex:
         self.config = config
         self.index: faiss.Index | None = None
         self.records: list[ReferenceRecord] = []
+        #: member descriptor widths of an ensemble (avl.ensemble); None for one encoder
+        self.blocks: list[int] | None = None
 
     @property
     def size(self) -> int:
@@ -70,7 +104,11 @@ class HashIndex:
         self.index.add(descriptors)
         self.records = records
 
-    def search(self, query: np.ndarray, top_k: int) -> SearchResult:
+    def search(
+        self, query: np.ndarray, top_k: int, allowed: np.ndarray | None = None
+    ) -> SearchResult:
+        """Nearest tiles to ``query``. ``allowed`` (tile indices) restricts the search
+        to a window around the navigation prior (avl.geo.search_window)."""
         if self.index is None:
             raise RuntimeError("Index is not built or loaded")
 
@@ -80,11 +118,28 @@ class HashIndex:
         if self.config.index_type == "hnsw":
             self.index.hnsw.efSearch = max(self.config.hnsw_ef_search, top_k * 4)
 
-        scores, indices = self.index.search(query, min(top_k, self.size))
+        k = min(top_k, self.size)
+        if allowed is None:
+            scores, indices = self.index.search(query, k)
+        else:
+            allowed = np.ascontiguousarray(allowed, dtype=np.int64)
+            k = min(k, len(allowed))
+            if k == 0:
+                return SearchResult(np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.float32))
+            selector = faiss.IDSelectorBatch(allowed)
+            if self.config.index_type == "hnsw":
+                params = faiss.SearchParametersHNSW(sel=selector, efSearch=self.index.hnsw.efSearch)
+            elif self.config.index_type == "ivfpq":
+                params = faiss.SearchParametersIVF(sel=selector, nprobe=self.index.nprobe)
+            else:
+                params = faiss.SearchParameters(sel=selector)
+            scores, indices = self.index.search(query, k, params=params)
         valid = indices[0] >= 0
         return SearchResult(indices=indices[0][valid], scores=scores[0][valid])
 
-    def search_orientations(self, queries: np.ndarray, top_k: int) -> SearchResult:
+    def search_orientations(
+        self, queries: np.ndarray, top_k: int, allowed: np.ndarray | None = None
+    ) -> SearchResult:
         queries = np.asarray(queries)
         if queries.ndim == 1:
             queries = queries.reshape(1, -1)
@@ -92,7 +147,7 @@ class HashIndex:
         best_by_location: dict[str, tuple[int, float]] = {}
         candidate_k = min(max(top_k * 8, top_k), self.size)
         for query in queries:
-            result = self.search(query, candidate_k)
+            result = self.search(query, candidate_k, allowed)
             for idx, score in zip(result.indices, result.scores):
                 index = int(idx)
                 record = self.records[index]
@@ -118,20 +173,11 @@ class HashIndex:
         directory.mkdir(parents=True, exist_ok=True)
         faiss.write_index(self.index, str(directory / "index.faiss"))
 
+        config = {name: getattr(self.config, name) for name in SAVED_FIELDS}
+        config["dem_dir"] = str(config["dem_dir"])
         metadata = {
-            "config": {
-                "model": self.config.model,
-                "descriptor_dim": self.config.descriptor_dim,
-                "cosplace_backbone": self.config.cosplace_backbone,
-                "query_rotations": self.config.query_rotations,
-                "index_type": self.config.index_type,
-                "hnsw_m": self.config.hnsw_m,
-                "hnsw_ef_construction": self.config.hnsw_ef_construction,
-                "hnsw_ef_search": self.config.hnsw_ef_search,
-                "ivfpq_nlist": self.config.ivfpq_nlist,
-                "ivfpq_m": self.config.ivfpq_m,
-                "ivfpq_nbits": self.config.ivfpq_nbits,
-            },
+            "config": config,
+            "blocks": self.blocks,
             "records": [asdict(record) for record in self.records],
         }
         with open(directory / "metadata.json", "w", encoding="utf-8") as f:
@@ -144,21 +190,14 @@ class HashIndex:
 
         saved_config = metadata["config"]
         if config is None:
+            # Indexes written before a field existed fall back to its default,
+            # which is the behaviour they were built with.
             config = AVLConfig(
-                model=saved_config["model"],
-                descriptor_dim=saved_config["descriptor_dim"],
-                cosplace_backbone=saved_config.get("cosplace_backbone", "ResNet101"),
-                query_rotations=saved_config.get("query_rotations", 4),
-                index_type=saved_config["index_type"],
-                hnsw_m=saved_config.get("hnsw_m", 32),
-                hnsw_ef_construction=saved_config.get("hnsw_ef_construction", 200),
-                hnsw_ef_search=saved_config.get("hnsw_ef_search", 128),
-                ivfpq_nlist=saved_config.get("ivfpq_nlist", 4096),
-                ivfpq_m=saved_config.get("ivfpq_m", 64),
-                ivfpq_nbits=saved_config.get("ivfpq_nbits", 8),
+                **{name: saved_config[name] for name in SAVED_FIELDS if name in saved_config}
             )
 
         instance = cls(config)
         instance.index = faiss.read_index(str(directory / "index.faiss"))
         instance.records = [ReferenceRecord(**record) for record in metadata["records"]]
+        instance.blocks = metadata.get("blocks")
         return instance

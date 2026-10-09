@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="#10141c" stroke="#2f6df0" stroke-width="4"/>
+  <!-- reference map grid -->
+  <g stroke="#232c3b" stroke-width="2">
+    <path d="M28 34h72M28 58h72M28 82h72M46 28v76M70 28v76M94 28v76"/>
+  </g>
+  <!-- retrieved tile -->
+  <rect x="46" y="58" width="24" height="24" fill="#2f6df0" opacity="0.35"/>
+  <rect x="46" y="58" width="24" height="24" fill="none" stroke="#2f6df0" stroke-width="3"/>
+  <!-- fix marker -->
+  <circle cx="58" cy="70" r="7" fill="#7ee0a8"/>
+  <circle cx="58" cy="70" r="15" fill="none" stroke="#7ee0a8" stroke-width="2" opacity="0.6"/>
+  <!-- crosshair -->
+  <g stroke="#7ee0a8" stroke-width="3" stroke-linecap="round">
+    <path d="M58 44v-9M58 105v-9M32 70h-9M93 70h-9"/>
+  </g>
+</svg>
